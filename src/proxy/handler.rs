@@ -1,6 +1,7 @@
 use crate::{
     bridge::{self, Bridge, Direction},
     config::Platform,
+    event_bus::MjaiBus,
     logger::{BinaryLogger, Session},
 };
 use hudsucker::{
@@ -36,10 +37,17 @@ pub struct ProxyHandler {
     platform: Platform,
     bridges: Arc<StdMutex<HashMap<SocketAddr, SharedBridge>>>,
     next_flow_id: Arc<AtomicU64>,
+    /// Optional fan-out for parsed mjai events. `None` keeps the proxy
+    /// usable in tests and in standalone "log only" mode.
+    mjai_tx: Option<MjaiBus>,
 }
 
 impl ProxyHandler {
-    pub fn new(session: Arc<Session>, platform: Platform) -> anyhow::Result<Self> {
+    pub fn new(
+        session: Arc<Session>,
+        platform: Platform,
+        mjai_tx: Option<MjaiBus>,
+    ) -> anyhow::Result<Self> {
         let binary = session.binary_logger("proxy")?;
         Ok(Self {
             session,
@@ -47,6 +55,7 @@ impl ProxyHandler {
             platform,
             bridges: Arc::new(StdMutex::new(HashMap::new())),
             next_flow_id: Arc::new(AtomicU64::new(1)),
+            mjai_tx,
         })
     }
 
@@ -179,6 +188,12 @@ impl ProxyHandler {
                 };
                 if !events.is_empty() {
                     debug!("{dir_arrow} {uri} bridge emitted {} event(s)", events.len());
+                    if let Some(tx) = &self.mjai_tx {
+                        for ev in events {
+                            // No subscribers is fine — broadcast just drops.
+                            let _ = tx.send(ev);
+                        }
+                    }
                 }
             }
             Message::Text(t) => {

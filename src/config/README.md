@@ -65,6 +65,7 @@ bar = "default_value"
 - `logging` (`logging.rs`) — log root dir, console default level (overridden by `RUST_LOG`), `all_level` severity filter for `all.log` (`EnvFilter` syntax).
 - `platform` (`platform.rs`) — game platform whose traffic to bridge. `kind` selects which `Bridge` impl runs in the proxy handler. Currently only `Majsoul`.
 - `proxy` (`proxy.rs`) — MITM proxy enable flag, listen addr, CA cert dir.
+- `bot` (`bot.rs`) — AI bot enable flag, active bot subdir name, `mjai_bot/` root, and whether to run `uv sync` automatically before spawning.
 
 ## Notes
 

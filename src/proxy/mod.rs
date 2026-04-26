@@ -5,6 +5,7 @@ pub use handler::ProxyHandler;
 
 use crate::{
     config::{Platform, ProxyConfig},
+    event_bus::MjaiBus,
     logger::Session,
     util::resolve_dir,
 };
@@ -17,6 +18,7 @@ pub async fn start_proxy<F>(
     config: ProxyConfig,
     platform: Platform,
     session: Arc<Session>,
+    mjai_tx: Option<MjaiBus>,
     shutdown: F,
 ) -> Result<()>
 where
@@ -29,7 +31,7 @@ where
     let addr = SocketAddr::from_str(&config.addr)
         .with_context(|| format!("Invalid proxy addr: {}", config.addr))?;
 
-    let handler = ProxyHandler::new(session.clone(), platform)?;
+    let handler = ProxyHandler::new(session.clone(), platform, mjai_tx)?;
 
     info!("Starting proxy on {addr}");
 

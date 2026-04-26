@@ -12,5 +12,12 @@ fn main() {
     println!("cargo:rerun-if-changed=proto/liqi.proto");
     println!("cargo:rerun-if-changed=build.rs");
 
+    // Surface the build target triple to runtime code so it can pick the
+    // right bundled python-build-standalone / uv binary out of the Tauri
+    // resource dir. Cargo only exposes this via the `TARGET` env var at
+    // build time; we forward it as `TARGET_TRIPLE` for the binary.
+    let target = env::var("TARGET").expect("TARGET not set by cargo");
+    println!("cargo:rustc-env=TARGET_TRIPLE={target}");
+
     tauri_build::build();
 }

@@ -1,8 +1,10 @@
+mod bot;
 mod general;
 mod logging;
 mod platform;
 mod proxy;
 
+pub use bot::BotConfig;
 pub use general::GeneralConfig;
 pub use logging::LoggingConfig;
 pub use platform::{Platform, PlatformConfig};
@@ -18,6 +20,7 @@ pub struct AppConfig {
     pub logging: LoggingConfig,
     pub platform: PlatformConfig,
     pub proxy: ProxyConfig,
+    pub bot: BotConfig,
 }
 
 enum ResolvedPath {
