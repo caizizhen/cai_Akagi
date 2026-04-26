@@ -1,7 +1,17 @@
 venv
 __pycache__
+target
+node_modules
 
 # Claude
 .claude
 CLAUDE.md
 claude*.md
+
+# Reference
+reference
+reference*.md
+
+# Runtime data
+ca/
+logs/

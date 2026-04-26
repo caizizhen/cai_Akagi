@@ -1,0 +1,49 @@
+# Bridge Module
+
+Platform-specific protocol bridges between game wire protocols and the
+[mjai JSONL protocol](../../reference/reference_mjai.md) consumed by AI bots.
+
+## Trait
+
+```rust
+pub trait Bridge: Send {
+    fn parse(&mut self, content: &[u8]) -> Vec<MjaiEvent>;
+    fn build(&mut self, command: &MjaiEvent) -> Option<Vec<u8>>;
+}
+```
+
+- `parse` — raw inbound WS binary frame → zero or more `MjaiEvent`s.
+- `build` — outbound mjai command (also `MjaiEvent`) → optional raw WS binary frame (autoplay).
+
+## mjai types
+
+`MjaiEvent` lives in [`crate::schema::mjai`](../schema/mjai/mod.rs) — it's used
+across the project (bridge output, AI bots, frontend HUD) and isn't owned by
+this module. See `src/schema/README.md`.
+
+One bridge instance per independent game session. For Majsoul that means one
+per WebSocket flow, since each flow has its own request id sequence and game
+state.
+
+## Selecting a bridge
+
+`bridge::for_platform(platform)` returns a `Box<dyn Bridge>` for the configured
+[`Platform`](../config/platform.rs). The proxy handler builds a fresh bridge
+inside `handle_websocket` so per-flow state is isolated.
+
+## Adding a new platform
+
+1. Add a variant to `config::Platform` (`src/config/platform.rs`).
+2. Create `src/bridge/<name>/mod.rs` with a struct that implements `Bridge`.
+3. Re-export it from `src/bridge/mod.rs` and add the match arm in
+   `for_platform`.
+
+## Existing bridges
+
+- `majsoul/` — Majsoul (lq.* protobuf over WS). `parser.rs` decodes raw
+  WS frames into `ParsedMessage { msg_type, msg_id, method_name, payload }`;
+  `mod.rs` logs them but doesn't emit mjai yet (state machine is a
+  separate phase). See `majsoul/parser.rs` module docs for the 5-layer
+  wire format and `reference/Akagi/mitm/bridge/majsoul/bridge.py` for the
+  mjai mapping. GPL-3.0 / AGPL references — protocol layout only, do
+  **not** copy code.
