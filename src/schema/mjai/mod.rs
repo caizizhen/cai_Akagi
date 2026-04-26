@@ -105,6 +105,14 @@ pub enum MjaiEvent {
 
     EndKyoku,
     EndGame,
+
+    /// Non-spec: bot's "no action this turn" reply.
+    ///
+    /// Not part of the 15 mjai protocol events and never produced by the
+    /// Majsoul bridge. Only emitted by a [`crate::bot::BotRunner`] when the
+    /// bot has no decision to make. Kept in this enum so bot replies
+    /// round-trip through the same type as bridge events.
+    None,
 }
 
 #[cfg(test)]
@@ -136,6 +144,7 @@ mod tests {
             r#"{"type":"ryukyoku"}"#,
             r#"{"type":"end_kyoku"}"#,
             r#"{"type":"end_game"}"#,
+            r#"{"type":"none"}"#,
         ];
 
         for line in lines {
