@@ -231,7 +231,7 @@ no-op and only the parsed-frame text log (if any) is written.
 - `tile.rs` — Majsoul ↔ mjai tile-string mapping + canonical mjai sort order.
 - `liqi.json` — method routing table (service → method → request/response
   type names). Embedded with `include_str!`.
-- `../../../proto/liqi.proto` — message definitions. Compiled by `build.rs`
+- `proto/liqi.proto` — message definitions. Compiled by `build.rs`
   (project root) into a `FileDescriptorSet` (`liqi_desc.bin` in `OUT_DIR`)
   embedded with `include_bytes!`. The Rust message structs are also
   generated but currently unused — `Wrapper` is decoded inline via a small
@@ -299,7 +299,8 @@ The proxy handler (`src/proxy/handler.rs`) constructs a fresh
 
 ## Adding new behaviour
 
-- **New action types**: just add the message to `proto/liqi.proto`. Pool
+- **New action types**: just add the message to `proto/liqi.proto` (in
+  this directory). Pool
   lookup happens dynamically by name.
 - **New service methods**: update `liqi.json` (currently hand-edited).
 - **Mjai conversion**: add a state machine layer that consumes
