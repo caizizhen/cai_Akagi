@@ -81,6 +81,19 @@ impl From<&Meld> for MeldSnapshot {
     }
 }
 
+/// One entry in a player's discard pile. Carries the full per-tile signal we
+/// need for both rendering (mahgen `^`/`_`/`v` markers) and the analysis
+/// engine's tedashi tracking.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiscardEntry {
+    /// mjai tile string (e.g. `"5mr"`, `"P"`, `"3p"`).
+    pub tile: String,
+    /// `true` = manual cut (tedashi). `false` = drew-and-discarded (tsumogiri).
+    pub tedashi: bool,
+    /// `true` if this is the discard that committed riichi.
+    pub is_riichi: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayerSnapshot {
     pub seat: u8,
@@ -90,11 +103,14 @@ pub struct PlayerSnapshot {
     /// fed).
     pub tehai: Vec<String>,
     pub melds: Vec<MeldSnapshot>,
-    pub river: Vec<String>,
+    /// Discards in order. Each entry carries tedashi + riichi-commit flags.
+    pub river: Vec<DiscardEntry>,
     pub score: i32,
     pub riichi_declared: bool,
     pub riichi_stage: bool,
     pub double_riichi: bool,
+    /// Index in `river` of the riichi-committing discard, if any.
+    pub riichi_declaration_index: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,21 +128,40 @@ pub struct GameStateSnapshot {
     pub is_done: bool,
     pub players: [PlayerSnapshot; 4],
     pub dora_markers: Vec<String>,
+    /// The seat the active observer (our bot) plays as. Captured from the
+    /// `start_game.id` field. `None` if the bridge didn't tag a perspective.
+    pub our_seat: Option<u8>,
 }
 
 impl GameStateSnapshot {
-    pub fn from_state(s: &GameState) -> Self {
+    /// Build a snapshot. `our_seat` is threaded in by the tracker — see
+    /// [`crate::game_state::tracker`].
+    pub fn from_state(s: &GameState, our_seat: Option<u8>) -> Self {
         let players: [PlayerSnapshot; 4] = std::array::from_fn(|i| {
             let p = &s.players[i];
+            // Pair each discard with its tedashi + riichi-commit flags.
+            // riichienv guarantees parallel arrays; if they ever drift we
+            // fall back to defaults so a malformed snapshot still renders.
+            let river: Vec<DiscardEntry> = p
+                .discards
+                .iter()
+                .enumerate()
+                .map(|(idx, &tile)| DiscardEntry {
+                    tile: tid_to_mjai(tile),
+                    tedashi: p.discard_from_hand.get(idx).copied().unwrap_or(true),
+                    is_riichi: p.discard_is_riichi.get(idx).copied().unwrap_or(false),
+                })
+                .collect();
             PlayerSnapshot {
                 seat: i as u8,
                 tehai: p.hand.iter().copied().map(tid_to_mjai).collect(),
                 melds: p.melds.iter().map(MeldSnapshot::from).collect(),
-                river: p.discards.iter().copied().map(tid_to_mjai).collect(),
+                river,
                 score: p.score,
                 riichi_declared: p.riichi_declared,
                 riichi_stage: p.riichi_stage,
                 double_riichi: p.double_riichi_declared,
+                riichi_declaration_index: p.riichi_declaration_index,
             }
         });
 
@@ -151,6 +186,7 @@ impl GameStateSnapshot {
                 .copied()
                 .map(tid_to_mjai)
                 .collect(),
+            our_seat,
         }
     }
 }
@@ -193,7 +229,7 @@ mod tests {
         // Build a default GameState and assert snapshot keys are stable.
         let rule = riichienv_core::rule::GameRule::default_tenhou();
         let s = GameState::new(0, true, None, 0, rule);
-        let snap = GameStateSnapshot::from_state(&s);
+        let snap = GameStateSnapshot::from_state(&s, Some(0));
         let v: serde_json::Value = serde_json::to_value(&snap).unwrap();
         for key in [
             "bakaze",

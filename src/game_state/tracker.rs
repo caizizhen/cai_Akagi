@@ -39,6 +39,8 @@ use tracing::{info, warn};
 pub struct GameTracker {
     state: Option<GameState>,
     rule: GameRule,
+    /// The bot's own seat, captured from `start_game.id`.
+    our_seat: Option<u8>,
     /// Total events fed since process start. Useful for "is the bridge
     /// alive?" checks; not reset on game boundaries.
     pub events_seen: u64,
@@ -49,6 +51,7 @@ impl GameTracker {
         Self {
             state: None,
             rule: GameRule::default_tenhou(),
+            our_seat: None,
             events_seen: 0,
         }
     }
@@ -59,10 +62,14 @@ impl GameTracker {
     pub fn handle(&mut self, ev: &AkagiEvent) -> Result<()> {
         self.events_seen += 1;
 
-        if matches!(ev, AkagiEvent::StartGame { .. }) {
+        if let AkagiEvent::StartGame { id, .. } = ev {
             // Fresh game → fresh GameState. Constructor seeds round 0
             // (E-1) with default scores per `mode.starting_score()`.
             self.state = Some(GameState::new(0, true, None, 0, self.rule.clone()));
+            // Capture our perspective if the bridge tagged one.
+            if let Some(seat) = id {
+                self.our_seat = Some(*seat);
+            }
         }
 
         let Some(ri) = convert::to_riichienv(ev)? else {
@@ -78,7 +85,14 @@ impl GameTracker {
     /// Snapshot of the current state. Returns `None` if no game has
     /// started yet.
     pub fn snapshot(&self) -> Option<GameStateSnapshot> {
-        self.state.as_ref().map(GameStateSnapshot::from_state)
+        self.state
+            .as_ref()
+            .map(|s| GameStateSnapshot::from_state(s, self.our_seat))
+    }
+
+    /// The captured observer seat, or `None` if no `start_game.id` arrived.
+    pub fn our_seat(&self) -> Option<u8> {
+        self.our_seat
     }
 
     /// Borrow the live engine state. For advanced use cases (e.g. running
@@ -101,20 +115,40 @@ impl Default for GameTracker {
 /// The task ends cleanly when the broadcast channel closes (all
 /// `MjaiBus` senders dropped).
 pub fn spawn(rx: broadcast::Receiver<AkagiEvent>) -> Arc<Mutex<GameTracker>> {
+    spawn_with_post(rx, None)
+}
+
+/// Like [`spawn`] but also re-emits each consumed `AkagiEvent` on `post`
+/// **after** the tracker has applied it. Subscribers to `post` can rely on
+/// the tracker snapshot being current when they receive an event.
+pub fn spawn_with_post(
+    rx: broadcast::Receiver<AkagiEvent>,
+    post: Option<broadcast::Sender<AkagiEvent>>,
+) -> Arc<Mutex<GameTracker>> {
     let tracker = Arc::new(Mutex::new(GameTracker::new()));
     let cloned = tracker.clone();
-    tokio::spawn(async move { run(cloned, rx).await });
+    tokio::spawn(async move { run(cloned, rx, post).await });
     tracker
 }
 
-async fn run(tracker: Arc<Mutex<GameTracker>>, mut rx: broadcast::Receiver<AkagiEvent>) {
+async fn run(
+    tracker: Arc<Mutex<GameTracker>>,
+    mut rx: broadcast::Receiver<AkagiEvent>,
+    post: Option<broadcast::Sender<AkagiEvent>>,
+) {
     info!("game tracker subscribed to MJAI bus");
     loop {
         match rx.recv().await {
             Ok(ev) => {
-                let mut t = tracker.lock().await;
-                if let Err(e) = t.handle(&ev) {
-                    warn!("game tracker: handle error: {e:#}");
+                {
+                    let mut t = tracker.lock().await;
+                    if let Err(e) = t.handle(&ev) {
+                        warn!("game tracker: handle error: {e:#}");
+                    }
+                }
+                if let Some(p) = &post {
+                    // Receiver may have lagged or no-one subscribed yet — ignore.
+                    let _ = p.send(ev);
                 }
             }
             Err(broadcast::error::RecvError::Lagged(n)) => {

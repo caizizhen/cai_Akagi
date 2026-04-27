@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod bot;
 pub mod bridge;
 pub mod cli;
@@ -49,6 +50,8 @@ pub fn run() {
     let bot_status_bus = event_bus::bot_status_bus();
     let proxy_status_bus = event_bus::proxy_status_bus();
     let notify_bus = event_bus::notify_bus();
+    let analysis_bus = event_bus::analysis_bus();
+    let post_tracker_bus = event_bus::post_tracker_bus();
 
     let bot_enabled = cfg.bot.enabled;
     let proxy_enabled = cfg.proxy.enabled;
@@ -56,8 +59,24 @@ pub fn run() {
 
     // Game-state tracker subscribes to the MJAI bus before AppState is
     // built so the Arc handle goes straight into state for future IPC
-    // commands. The tracker task ends when all bus senders drop.
-    let game_tracker = game_state::spawn(mjai_bus.subscribe());
+    // commands. The tracker task ends when all bus senders drop. It also
+    // re-emits each handled event on `post_tracker_bus` so the analysis
+    // runner can rely on the snapshot being current.
+    let game_tracker = game_state::spawn_with_post(
+        mjai_bus.subscribe(),
+        Some(post_tracker_bus.clone()),
+    );
+
+    // Analysis runner: subscribes to the post-tracker bus, runs analyze,
+    // broadcasts on analysis_bus, and caches the latest result for the
+    // `get_analysis` Tauri command.
+    let analysis_cache = std::sync::Arc::new(tokio::sync::RwLock::new(None));
+    analysis::runner::spawn(
+        post_tracker_bus.subscribe(),
+        game_tracker.clone(),
+        analysis_bus.clone(),
+        analysis_cache.clone(),
+    );
 
     let state = ipc::AppState::new(
         cfg,
@@ -68,7 +87,9 @@ pub fn run() {
         bot_status_bus.clone(),
         proxy_status_bus.clone(),
         notify_bus.clone(),
+        analysis_bus.clone(),
         game_tracker,
+        analysis_cache,
     );
 
     tauri::Builder::default()

@@ -5,8 +5,11 @@
 //! a toast. Keep the JSON shape conservative — clients lock onto field
 //! names quickly and renames break dashboards.
 
+use crate::analysis::result::AnalysisResult;
 use crate::bot::BotRegistry;
 use crate::config::AppConfig;
+use crate::game_state::mahgen_view::MahgenView;
+use crate::game_state::snapshot::GameStateSnapshot;
 use crate::ipc::proxy_supervisor::spawn_proxy_supervisor;
 use crate::ipc::state::AppState;
 use crate::schema::{BotInfo, Notification, Snapshot};
@@ -120,6 +123,35 @@ pub async fn get_log_dir(state: State<'_, AppState>) -> CmdResult<PathBuf> {
     Ok(state.log_session.dir().to_path_buf())
 }
 
+/// Latest analysis output. `None` until the analysis runner has produced
+/// at least one result for the current game.
+#[tauri::command]
+pub async fn get_analysis(state: State<'_, AppState>) -> CmdResult<Option<AnalysisResult>> {
+    Ok(state.analysis_cache.read().await.clone())
+}
+
+/// Live game-state snapshot from the tracker. `None` before any
+/// `start_game` event has been observed.
+#[tauri::command]
+pub async fn get_game_snapshot(
+    state: State<'_, AppState>,
+) -> CmdResult<Option<GameStateSnapshot>> {
+    Ok(state.game_tracker.lock().await.snapshot())
+}
+
+/// Pre-encoded mahgen DSL strings ready for the frontend `<mah-gen>`
+/// element. Built from the same snapshot as `get_game_snapshot` — call
+/// whichever the UI surface prefers; both are O(34 tiles) to generate.
+#[tauri::command]
+pub async fn get_mahgen_view(state: State<'_, AppState>) -> CmdResult<Option<MahgenView>> {
+    Ok(state
+        .game_tracker
+        .lock()
+        .await
+        .snapshot()
+        .map(|s| MahgenView::from_snapshot(&s)))
+}
+
 fn persist_config(config: &AppConfig, path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
@@ -145,6 +177,9 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::stop_proxy,
             $crate::ipc::commands::get_status,
             $crate::ipc::commands::get_log_dir,
+            $crate::ipc::commands::get_analysis,
+            $crate::ipc::commands::get_game_snapshot,
+            $crate::ipc::commands::get_mahgen_view,
         ]
     };
 }

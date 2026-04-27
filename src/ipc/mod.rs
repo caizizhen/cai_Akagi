@@ -25,13 +25,14 @@
 //!
 //! Event names (kebab-case, Tauri convention):
 //!
-//! | Event           | Payload type                |
-//! |-----------------|-----------------------------|
-//! | `mjai-event`    | `schema::MjaiEvent`         |
-//! | `bot-response`  | `bot::BotResponse`          |
-//! | `bot-status`    | `schema::BotStatus`         |
-//! | `proxy-status`  | `schema::ProxyStatus`       |
-//! | `notify`        | `schema::Notification`      |
+//! | Event             | Payload type                  |
+//! |-------------------|-------------------------------|
+//! | `mjai-event`      | `schema::MjaiEvent`           |
+//! | `bot-response`    | `bot::BotResponse`            |
+//! | `bot-status`      | `schema::BotStatus`           |
+//! | `proxy-status`    | `schema::ProxyStatus`         |
+//! | `notify`          | `schema::Notification`        |
+//! | `analysis-result` | `analysis::AnalysisResult`    |
 
 pub mod commands;
 pub mod proxy_supervisor;
@@ -56,6 +57,11 @@ fn spawn_forwarders<R: Runtime>(app: AppHandle<R>, state: AppState) {
     forward(app.clone(), state.mjai_bus.subscribe(), "mjai-event");
     forward(app.clone(), state.bot_response_bus.subscribe(), "bot-response");
     forward(app.clone(), state.notify_bus.subscribe(), "notify");
+    forward(
+        app.clone(),
+        state.analysis_bus.subscribe(),
+        "analysis-result",
+    );
 
     // Status buses: forward AND snapshot into AppState.
     spawn_bot_status_forwarder(app.clone(), state.clone());
