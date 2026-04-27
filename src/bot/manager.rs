@@ -10,12 +10,26 @@
 //! itself returns `MjaiEvent::None` when no action is owed, so we can't
 //! be wrong about "allowed to act" — only about whether the round-trip
 //! to the bot is worth the latency. Currently we accept that latency.
+//!
+//! ## Status & notification emission
+//!
+//! Every lifecycle transition is published to two side-channel buses for
+//! the IPC layer:
+//!
+//! - `BotStatusBus` — typed state machine
+//!   (`Idle/Loading/Ready/Error/Stopped`). The frontend renders a spinner
+//!   on `Loading{SyncingDeps}` so the user knows the slow first-run
+//!   `uv sync` is in progress, not a hang.
+//! - `NotifyBus` — toast-style notifications. Loading and error events
+//!   reuse the same `id` (`"bot-loading-<name>"`) so the sticky
+//!   "preparing" toast is replaced rather than duplicated when the spawn
+//!   resolves.
 
 use crate::bot::registry::BotRegistry;
 use crate::bot::runner::{BotRunner, SubprocessBot};
 use crate::bot::runtime::PythonRuntime;
-use crate::event_bus::BotResponseBus;
-use crate::schema::MjaiEvent;
+use crate::event_bus::{BotResponseBus, BotStatusBus, NotifyBus};
+use crate::schema::{BotStatus, LoadStage, MjaiEvent, Notification};
 use anyhow::{Context, Result, bail};
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
@@ -31,6 +45,8 @@ pub struct BotManager {
     /// Bot's seat in the current game; set on `start_game`.
     actor_id: Option<u8>,
     out_tx: BotResponseBus,
+    status_tx: BotStatusBus,
+    notify_tx: NotifyBus,
 }
 
 impl BotManager {
@@ -39,6 +55,8 @@ impl BotManager {
         registry: BotRegistry,
         active_name: String,
         out_tx: BotResponseBus,
+        status_tx: BotStatusBus,
+        notify_tx: NotifyBus,
     ) -> Self {
         Self {
             runtime,
@@ -48,6 +66,8 @@ impl BotManager {
             pending: Vec::new(),
             actor_id: None,
             out_tx,
+            status_tx,
+            notify_tx,
         }
     }
 
@@ -69,6 +89,9 @@ impl BotManager {
             bot = %self.active_name,
             "bot manager subscribed to MJAI bus; waiting for start_game"
         );
+        // Surface the initial state to any IPC consumer that subscribes
+        // late. Send is no-op when no subscribers exist yet.
+        self.emit_status(BotStatus::Idle);
         loop {
             match rx.recv().await {
                 Ok(ev) => {
@@ -116,7 +139,21 @@ impl BotManager {
             .as_mut()
             .expect("runner is Some — checked above");
         let batch = std::mem::take(&mut self.pending);
-        let resp = runner.react(&batch).await.context("bot react failed")?;
+        let resp = match runner.react(&batch).await {
+            Ok(r) => r,
+            Err(e) => {
+                let err_str = format!("{e:#}");
+                let bot = self.active_name.clone();
+                self.emit_status(BotStatus::Error {
+                    bot: bot.clone(),
+                    error: err_str.clone(),
+                });
+                self.emit_notify(
+                    Notification::error("Bot reaction failed").body(err_str),
+                );
+                return Err(e).context("bot react failed");
+            }
+        };
         debug!(action = ?resp.action, "bot reacted");
         // MjaiEvent::None still goes on the bus — downstream consumers
         // decide whether to render. Centralizes the "skip" decision.
@@ -126,33 +163,135 @@ impl BotManager {
             // Drain runner cleanly (writes end_game to stdin internally
             // through the next reset on the next start_game). Drop it
             // here so resources release immediately.
+            let bot = self.active_name.clone();
             self.runner = None;
             self.actor_id = None;
+            self.emit_status(BotStatus::Stopped { bot });
         }
         Ok(())
     }
 
+    /// Two-phase spawn so the IPC layer can show a "Syncing deps…" spinner
+    /// during the slow first-run path before the subprocess actually
+    /// starts. Each branch publishes status + notification before
+    /// returning so the UI never sees a stuck `Loading` state.
     async fn spawn_runner(&mut self) -> Result<()> {
-        let entry = self.registry.find(&self.active_name).with_context(|| {
-            format!(
-                "bot {:?} not found in registry at {}",
-                self.active_name,
-                self.registry.root().display()
-            )
-        })?;
+        let bot_name = self.active_name.clone();
         let actor_id = self
             .actor_id
             .context("spawn_runner called without actor_id")?;
+
+        let entry = match self.registry.find(&bot_name) {
+            Some(e) => e.clone(),
+            None => {
+                let msg = format!(
+                    "bot {:?} not found in registry at {}",
+                    bot_name,
+                    self.registry.root().display()
+                );
+                self.fail_load(&bot_name, &msg, "Bot not found");
+                bail!(msg);
+            }
+        };
         if entry.pyproject.is_none() {
-            bail!(
+            let msg = format!(
                 "bot {} has no pyproject.toml — required for uv sync",
                 entry.name
             );
+            self.fail_load(&bot_name, &msg, "Bot misconfigured");
+            bail!(msg);
         }
-        let bot = SubprocessBot::spawn(&self.runtime, &entry.dir, actor_id).await?;
-        info!(bot = %entry.name, actor_id, "bot runner spawned");
+
+        let load_id = format!("bot-loading-{bot_name}");
+
+        // Phase 1: dep sync. ensure_synced is a no-op when stamp matches,
+        // so the SyncingDeps state is brief on warm boots.
+        self.emit_status(BotStatus::Loading {
+            bot: bot_name.clone(),
+            stage: LoadStage::SyncingDeps,
+        });
+        self.emit_notify(
+            Notification::info("Preparing bot")
+                .body("Installing Python dependencies — first launch may take a while.")
+                .sticky()
+                .id(load_id.clone()),
+        );
+
+        if let Err(e) = self.runtime.ensure_synced(&entry.dir).await {
+            let msg = format!("uv sync failed: {e:#}");
+            self.emit_status(BotStatus::Error {
+                bot: bot_name.clone(),
+                error: msg.clone(),
+            });
+            self.emit_notify(
+                Notification::error("Bot dependency install failed")
+                    .body(msg)
+                    .id(load_id),
+            );
+            return Err(e).context("ensure_synced");
+        }
+
+        // Phase 2: subprocess spawn.
+        self.emit_status(BotStatus::Loading {
+            bot: bot_name.clone(),
+            stage: LoadStage::Spawning,
+        });
+
+        let mut cmd = self.runtime.command_for(&entry.dir, &["bot.py"]);
+        cmd.arg(actor_id.to_string());
+        let bot = match SubprocessBot::spawn_with_command(
+            cmd,
+            self.runtime.clone(),
+            &entry.dir,
+            actor_id,
+        )
+        .await
+        {
+            Ok(b) => b,
+            Err(e) => {
+                let msg = format!("subprocess spawn failed: {e:#}");
+                self.emit_status(BotStatus::Error {
+                    bot: bot_name.clone(),
+                    error: msg.clone(),
+                });
+                self.emit_notify(
+                    Notification::error("Bot subprocess failed to start")
+                        .body(msg)
+                        .id(load_id),
+                );
+                return Err(e);
+            }
+        };
+
+        info!(bot = %bot_name, actor_id, "bot runner spawned");
+        self.emit_status(BotStatus::Ready {
+            bot: bot_name.clone(),
+            actor_id,
+        });
+        // Reuse the loading id so the sticky toast is replaced, not
+        // duplicated. Frontend treats same-id as a swap.
+        self.emit_notify(
+            Notification::success(format!("{bot_name} ready"))
+                .id(load_id),
+        );
         self.runner = Some(Box::new(bot));
         Ok(())
+    }
+
+    fn fail_load(&self, bot: &str, error: &str, title: &str) {
+        self.emit_status(BotStatus::Error {
+            bot: bot.into(),
+            error: error.into(),
+        });
+        self.emit_notify(Notification::error(title.to_owned()).body(error.to_owned()));
+    }
+
+    fn emit_status(&self, s: BotStatus) {
+        let _ = self.status_tx.send(s);
+    }
+
+    fn emit_notify(&self, n: Notification) {
+        let _ = self.notify_tx.send(n);
     }
 
     /// Conservative: every event that *might* be a decision point flushes
@@ -186,7 +325,7 @@ impl BotManager {
 mod tests {
     use super::*;
     use crate::bot::types::BotResponse;
-    use crate::event_bus::bot_response_bus;
+    use crate::event_bus::{bot_response_bus, bot_status_bus, notify_bus};
     use async_trait::async_trait;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -197,6 +336,8 @@ mod tests {
     struct MockBotRunner {
         calls: Arc<Mutex<Vec<Vec<MjaiEvent>>>>,
         next: Arc<Mutex<Vec<BotResponse>>>,
+        /// If set, react() returns this error instead of consuming `next`.
+        fail_with: Arc<Mutex<Option<String>>>,
     }
 
     impl MockBotRunner {
@@ -205,8 +346,17 @@ mod tests {
             let r = Self {
                 calls: calls.clone(),
                 next: Arc::new(Mutex::new(replies)),
+                fail_with: Arc::new(Mutex::new(None)),
             };
             (r, calls)
+        }
+
+        fn failing(err: &str) -> Self {
+            Self {
+                calls: Arc::new(Mutex::new(Vec::new())),
+                next: Arc::new(Mutex::new(Vec::new())),
+                fail_with: Arc::new(Mutex::new(Some(err.into()))),
+            }
         }
     }
 
@@ -214,6 +364,9 @@ mod tests {
     impl BotRunner for MockBotRunner {
         async fn react(&mut self, events: &[MjaiEvent]) -> Result<BotResponse> {
             self.calls.lock().await.push(events.to_vec());
+            if let Some(err) = self.fail_with.lock().await.as_deref() {
+                bail!(err.to_string());
+            }
             let mut q = self.next.lock().await;
             if q.is_empty() {
                 Ok(BotResponse {
@@ -243,16 +396,33 @@ mod tests {
 
     fn manager_with_mock(
         replies: Vec<BotResponse>,
-    ) -> (BotManager, Arc<Mutex<Vec<Vec<MjaiEvent>>>>, broadcast::Receiver<BotResponse>) {
+    ) -> (
+        BotManager,
+        Arc<Mutex<Vec<Vec<MjaiEvent>>>>,
+        broadcast::Receiver<BotResponse>,
+        broadcast::Receiver<BotStatus>,
+        broadcast::Receiver<Notification>,
+    ) {
         let (mock, calls) = MockBotRunner::new(replies);
         let bus = bot_response_bus();
-        let rx = bus.subscribe();
-        let mut mgr = BotManager::new(dummy_runtime(), empty_registry(), "mock".into(), bus);
+        let status = bot_status_bus();
+        let notify = notify_bus();
+        let resp_rx = bus.subscribe();
+        let status_rx = status.subscribe();
+        let notify_rx = notify.subscribe();
+        let mut mgr = BotManager::new(
+            dummy_runtime(),
+            empty_registry(),
+            "mock".into(),
+            bus,
+            status,
+            notify,
+        );
         // Pre-seat the actor and inject the mock so we don't go through
         // the registry / runtime path (covered by runner.rs tests).
         mgr.actor_id = Some(2);
         mgr.runner = Some(Box::new(mock));
-        (mgr, calls, rx)
+        (mgr, calls, resp_rx, status_rx, notify_rx)
     }
 
     fn dahai(actor: u8) -> MjaiEvent {
@@ -265,7 +435,7 @@ mod tests {
 
     #[tokio::test]
     async fn non_decision_events_accumulate_without_calling_react() {
-        let (mut mgr, calls, _rx) = manager_with_mock(vec![]);
+        let (mut mgr, calls, _, _, _) = manager_with_mock(vec![]);
 
         // None of these are decision points for seat 2:
         //   - own dahai (seat 2)
@@ -293,7 +463,7 @@ mod tests {
 
     #[tokio::test]
     async fn others_dahai_flushes_batch() {
-        let (mut mgr, calls, _rx) = manager_with_mock(vec![]);
+        let (mut mgr, calls, _, _, _) = manager_with_mock(vec![]);
         mgr.handle(MjaiEvent::Dora {
             dora_marker: "5p".into(),
         })
@@ -310,7 +480,7 @@ mod tests {
 
     #[tokio::test]
     async fn own_tsumo_flushes_others_tsumo_does_not() {
-        let (mut mgr, calls, _rx) = manager_with_mock(vec![]);
+        let (mut mgr, calls, _, _, _) = manager_with_mock(vec![]);
 
         // Others' tsumo: NOT a decision point.
         mgr.handle(MjaiEvent::Tsumo {
@@ -340,7 +510,7 @@ mod tests {
             action: dahai(2),
             meta: None,
         };
-        let (mut mgr, _, mut rx) = manager_with_mock(vec![scripted.clone()]);
+        let (mut mgr, _, mut rx, _, _) = manager_with_mock(vec![scripted.clone()]);
         mgr.handle(dahai(0)).await.unwrap(); // others' dahai → flush
 
         let received = rx.try_recv().expect("bot response should be broadcast");
@@ -348,19 +518,109 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn end_game_flushes_drops_runner_clears_seat() {
-        let (mut mgr, calls, _rx) = manager_with_mock(vec![]);
+    async fn end_game_flushes_drops_runner_emits_stopped() {
+        let (mut mgr, calls, _, mut status_rx, _) = manager_with_mock(vec![]);
         mgr.handle(MjaiEvent::EndGame).await.unwrap();
         assert_eq!(calls.lock().await.len(), 1);
         assert!(mgr.runner.is_none());
         assert!(mgr.actor_id.is_none());
+
+        let status = status_rx.try_recv().expect("status emitted");
+        assert!(
+            matches!(status, BotStatus::Stopped { .. }),
+            "expected Stopped, got {status:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn react_failure_emits_error_status_and_notification() {
+        let bus = bot_response_bus();
+        let status = bot_status_bus();
+        let notify = notify_bus();
+        let mut status_rx = status.subscribe();
+        let mut notify_rx = notify.subscribe();
+        let mut mgr = BotManager::new(
+            dummy_runtime(),
+            empty_registry(),
+            "mock".into(),
+            bus,
+            status,
+            notify,
+        );
+        mgr.actor_id = Some(2);
+        mgr.runner = Some(Box::new(MockBotRunner::failing("kaboom")));
+
+        // Trigger a decision point — react() returns error.
+        let err = mgr.handle(dahai(0)).await.unwrap_err();
+        assert!(format!("{err:#}").contains("react failed"));
+
+        let s = status_rx.try_recv().unwrap();
+        match s {
+            BotStatus::Error { bot, error } => {
+                assert_eq!(bot, "mock");
+                assert!(error.contains("kaboom"), "got error: {error}");
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+
+        let n = notify_rx.try_recv().unwrap();
+        assert_eq!(n.level, crate::schema::NotifyLevel::Error);
+        assert!(n.title.contains("Bot reaction failed"));
+    }
+
+    #[tokio::test]
+    async fn missing_bot_in_registry_emits_error_status() {
+        // Empty registry + handle(StartGame{id}) → spawn_runner errors,
+        // emits BotStatus::Error and a notification.
+        let bus = bot_response_bus();
+        let status = bot_status_bus();
+        let notify = notify_bus();
+        let mut status_rx = status.subscribe();
+        let mut notify_rx = notify.subscribe();
+        let mut mgr = BotManager::new(
+            dummy_runtime(),
+            empty_registry(),
+            "ghost".into(),
+            bus,
+            status,
+            notify,
+        );
+
+        let err = mgr
+            .handle(MjaiEvent::StartGame {
+                names: ["a".into(), "b".into(), "c".into(), "d".into()],
+                kyoku_first: None,
+                aka_flag: None,
+                id: Some(0),
+            })
+            .await
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("not found in registry"));
+
+        let s = status_rx.try_recv().unwrap();
+        assert!(
+            matches!(s, BotStatus::Error { ref bot, .. } if bot == "ghost"),
+            "expected Error{{bot=ghost}}, got {s:?}"
+        );
+        let n = notify_rx.try_recv().unwrap();
+        assert_eq!(n.level, crate::schema::NotifyLevel::Error);
+        assert!(n.title.contains("Bot not found"));
     }
 
     #[tokio::test]
     async fn events_before_start_game_are_dropped() {
         // Manager freshly constructed → no actor_id, no runner.
         let bus = bot_response_bus();
-        let mut mgr = BotManager::new(dummy_runtime(), empty_registry(), "mock".into(), bus);
+        let status = bot_status_bus();
+        let notify = notify_bus();
+        let mut mgr = BotManager::new(
+            dummy_runtime(),
+            empty_registry(),
+            "mock".into(),
+            bus,
+            status,
+            notify,
+        );
         // Should not panic / error even with no runner.
         mgr.handle(dahai(0)).await.unwrap();
         assert!(mgr.pending.is_empty());
@@ -374,8 +634,16 @@ mod tests {
         let rx = mjai.subscribe();
 
         let bot_bus = bot_response_bus();
-        let mut mgr =
-            BotManager::new(dummy_runtime(), empty_registry(), "mock".into(), bot_bus);
+        let status = bot_status_bus();
+        let notify = notify_bus();
+        let mut mgr = BotManager::new(
+            dummy_runtime(),
+            empty_registry(),
+            "mock".into(),
+            bot_bus,
+            status,
+            notify,
+        );
         mgr.actor_id = Some(2);
         let (mock, _calls) = MockBotRunner::new(vec![]);
         mgr.runner = Some(Box::new(mock));

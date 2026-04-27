@@ -69,7 +69,14 @@ fn write_default_config(path: &Path) -> std::io::Result<()> {
     std::fs::write(path, body)
 }
 
-pub fn load_config(cli_path: Option<&Path>) -> AppConfig {
+/// Load and parse the config. Returns the parsed `AppConfig` and the
+/// path it was loaded from (so callers can persist updates back to the
+/// same file via `commands::update_config`).
+///
+/// On any failure path the in-memory default is returned, but the path
+/// returned is the one we *would* have written to — keeping `update_config`
+/// from silently writing to an unexpected location.
+pub fn load_config(cli_path: Option<&Path>) -> (AppConfig, PathBuf) {
     let path = match resolve_config_path(cli_path) {
         ResolvedPath::Existing(p) => p,
         ResolvedPath::Missing(target) => {
@@ -81,7 +88,7 @@ pub fn load_config(cli_path: Option<&Path>) -> AppConfig {
                 Ok(()) => target,
                 Err(e) => {
                     eprintln!("Failed to write default config: {e}, using in-memory defaults");
-                    return AppConfig::default();
+                    return (AppConfig::default(), target);
                 }
             }
         }
@@ -89,7 +96,7 @@ pub fn load_config(cli_path: Option<&Path>) -> AppConfig {
 
     eprintln!("Loading config from: {}", path.display());
 
-    match std::fs::read_to_string(&path) {
+    let cfg = match std::fs::read_to_string(&path) {
         Ok(content) => match toml::from_str::<AppConfig>(&content) {
             Ok(config) => config,
             Err(e) => {
@@ -101,7 +108,8 @@ pub fn load_config(cli_path: Option<&Path>) -> AppConfig {
             eprintln!("Failed to read config: {e}, using defaults");
             AppConfig::default()
         }
-    }
+    };
+    (cfg, path)
 }
 
 #[cfg(test)]
@@ -126,9 +134,10 @@ mod tests {
         let target = dir.join("nested").join("config.toml");
         assert!(!target.exists());
 
-        let cfg = load_config(Some(&target));
+        let (cfg, path) = load_config(Some(&target));
 
         assert!(target.exists(), "default config file should be created");
+        assert_eq!(path, target);
         let body = std::fs::read_to_string(&target).unwrap();
         let round_trip: AppConfig = toml::from_str(&body).unwrap();
         assert_eq!(round_trip.general.language, cfg.general.language);
@@ -142,8 +151,9 @@ mod tests {
         let target = dir.join("config.toml");
         std::fs::write(&target, "[general]\nlanguage = \"jp\"\n").unwrap();
 
-        let cfg = load_config(Some(&target));
+        let (cfg, path) = load_config(Some(&target));
         assert_eq!(cfg.general.language, "jp");
+        assert_eq!(path, target);
 
         std::fs::remove_dir_all(&dir).ok();
     }

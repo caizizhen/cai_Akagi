@@ -24,3 +24,6 @@ mjai_bot/*/.venv/
 
 # Tauri
 gen/
+
+# util
+mjai_bot/mortal

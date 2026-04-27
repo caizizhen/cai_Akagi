@@ -1,13 +1,21 @@
 //! In-process broadcast buses connecting Akagi's subsystems.
 //!
-//! Two buses, both `tokio::sync::broadcast::Sender`-typed:
+//! Five buses, all `tokio::sync::broadcast::Sender`-typed:
 //!
 //! - [`MjaiBus`]: every `MjaiEvent` parsed by a platform bridge is fanned
 //!   out here. Producers: bridge → proxy handler. Consumers: `BotManager`,
-//!   future HUD/storage/WS server.
+//!   `ipc` forwarder, future HUD/storage/WS server.
 //! - [`BotResponseBus`]: every `BotResponse` from the active `BotRunner`.
-//!   Producer: `BotManager`. Consumers: future HUD / external WS / replay
-//!   recorder.
+//!   Producer: `BotManager`. Consumers: `ipc` forwarder, future HUD /
+//!   external WS / replay recorder.
+//! - [`BotStatusBus`]: lifecycle of the active bot subprocess
+//!   (`Idle/Loading/Ready/Error/Stopped`). Producer: `BotManager`.
+//!   Consumer: `ipc` forwarder (UI loading spinner).
+//! - [`ProxyStatusBus`]: lifecycle of the MITM proxy
+//!   (`Stopped/Starting/Running/Error`). Producer: `ipc::commands` /
+//!   proxy supervisor. Consumer: `ipc` forwarder.
+//! - [`NotifyBus`]: ad-hoc toast notifications. Any subsystem may push;
+//!   `ipc` forwards to the frontend as `notify` events.
 //!
 //! Channel capacity is fixed-size — slow consumers see `RecvError::Lagged`
 //! rather than blocking the producer. That's the right trade-off for a
@@ -15,7 +23,7 @@
 //! than stall the proxy.
 
 use crate::bot::BotResponse;
-use crate::schema::MjaiEvent;
+use crate::schema::{BotStatus, MjaiEvent, Notification, ProxyStatus};
 use tokio::sync::broadcast;
 
 /// Fan-out for `MjaiEvent`s from platform bridges.
@@ -24,9 +32,22 @@ pub type MjaiBus = broadcast::Sender<MjaiEvent>;
 /// Fan-out for `BotResponse`s from the active bot.
 pub type BotResponseBus = broadcast::Sender<BotResponse>;
 
+/// Fan-out for `BotStatus` lifecycle transitions.
+pub type BotStatusBus = broadcast::Sender<BotStatus>;
+
+/// Fan-out for `ProxyStatus` lifecycle transitions.
+pub type ProxyStatusBus = broadcast::Sender<ProxyStatus>;
+
+/// Fan-out for transient `Notification`s pushed at the user.
+pub type NotifyBus = broadcast::Sender<Notification>;
+
 /// Default capacity. ~1 second of mjai events at peak game pace
 /// (start_kyoku + 13 tehai + many tsumo/dahai pairs) is well under 256.
 pub const DEFAULT_CAPACITY: usize = 256;
+
+/// Smaller buffer for status / notification streams — these are bursty
+/// but low-rate; 64 is plenty.
+pub const STATUS_CAPACITY: usize = 64;
 
 pub fn mjai_bus() -> MjaiBus {
     // Drop the placeholder receiver — real consumers subscribe later via
@@ -38,5 +59,20 @@ pub fn mjai_bus() -> MjaiBus {
 
 pub fn bot_response_bus() -> BotResponseBus {
     let (tx, _rx) = broadcast::channel(DEFAULT_CAPACITY);
+    tx
+}
+
+pub fn bot_status_bus() -> BotStatusBus {
+    let (tx, _rx) = broadcast::channel(STATUS_CAPACITY);
+    tx
+}
+
+pub fn proxy_status_bus() -> ProxyStatusBus {
+    let (tx, _rx) = broadcast::channel(STATUS_CAPACITY);
+    tx
+}
+
+pub fn notify_bus() -> NotifyBus {
+    let (tx, _rx) = broadcast::channel(STATUS_CAPACITY);
     tx
 }
