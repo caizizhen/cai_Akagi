@@ -25,6 +25,7 @@
 //!   "preparing" toast is replaced rather than duplicated when the spawn
 //!   resolves.
 
+use crate::bot::manifest;
 use crate::bot::registry::BotRegistry;
 use crate::bot::runner::{BotRunner, SubprocessBot};
 use crate::bot::runtime::PythonRuntime;
@@ -239,6 +240,33 @@ impl BotManager {
 
         let mut cmd = self.runtime.command_for(&entry.dir, &["bot.py"]);
         cmd.arg(actor_id.to_string());
+
+        // If the bot ships a manifest, resolve user values + manifest
+        // defaults and hand the path to the resolved JSON over to the
+        // child via AKAGI_BOT_CONFIG. Bots without a manifest get no env
+        // var — same behaviour as v3 before settings existed.
+        if let Some(m) = entry.manifest.as_ref() {
+            match manifest::load_values(&entry.dir, m)
+                .and_then(|values| manifest::write_resolved(&entry.dir, &values))
+            {
+                Ok(path) => {
+                    cmd.env("AKAGI_BOT_CONFIG", &path);
+                }
+                Err(e) => {
+                    let msg = format!("resolve bot settings: {e:#}");
+                    self.emit_status(BotStatus::Error {
+                        bot: bot_name.clone(),
+                        error: msg.clone(),
+                    });
+                    self.emit_notify(
+                        Notification::error("Bot settings resolution failed")
+                            .body(msg)
+                            .id(load_id),
+                    );
+                    return Err(e).context("resolve bot settings");
+                }
+            }
+        }
         let bot = match SubprocessBot::spawn_with_command(
             cmd,
             self.runtime.clone(),

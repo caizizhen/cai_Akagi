@@ -6,14 +6,16 @@
 //! names quickly and renames break dashboards.
 
 use crate::analysis::result::AnalysisResult;
+use crate::bot::manifest;
 use crate::bot::BotRegistry;
 use crate::config::AppConfig;
 use crate::game_state::mahgen_view::MahgenView;
 use crate::game_state::snapshot::GameStateSnapshot;
 use crate::ipc::proxy_supervisor::spawn_proxy_supervisor;
 use crate::ipc::state::AppState;
-use crate::schema::{BotInfo, Notification, Snapshot};
+use crate::schema::{BotInfo, BotSettings, Notification, Snapshot};
 use crate::util::resolve_dir;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tauri::State;
 
@@ -53,8 +55,64 @@ pub async fn list_bots(state: State<'_, AppState>) -> CmdResult<Vec<BotInfo>> {
             name: e.name.clone(),
             dir: e.dir.to_string_lossy().into_owned(),
             has_pyproject: e.pyproject.is_some(),
+            manifest: e.manifest.clone(),
         })
         .collect())
+}
+
+/// Read the merged settings (manifest + on-disk values) for one bot.
+/// Returns an error when the bot does not exist or has no manifest —
+/// frontend should hide the settings panel for manifest-less bots and
+/// avoid calling this command for them.
+#[tauri::command]
+pub async fn get_bot_settings(
+    name: String,
+    state: State<'_, AppState>,
+) -> CmdResult<BotSettings> {
+    let dir = state.config.read().await.bot.dir.clone();
+    let resolved = resolve_dir(Path::new(&dir));
+    let registry = BotRegistry::scan(&resolved).map_err(|e| format!("scan bots: {e:#}"))?;
+    let entry = registry
+        .find(&name)
+        .ok_or_else(|| format!("bot {name:?} not found"))?;
+    let manifest = entry
+        .manifest
+        .clone()
+        .ok_or_else(|| format!("bot {name:?} has no manifest.toml"))?;
+    let values = manifest::load_values(&entry.dir, &manifest)
+        .map_err(|e| format!("load settings: {e:#}"))?;
+    Ok(BotSettings { manifest, values })
+}
+
+/// Persist user-edited settings for one bot. Validates the values against
+/// the manifest before writing — wrong type, out-of-range numeric, and
+/// unknown enum choice all surface as command errors.
+///
+/// New values take effect on the next bot spawn (i.e. the next
+/// `start_game` event). The currently-running subprocess keeps its old
+/// values; document this caveat in the UI.
+#[tauri::command]
+pub async fn update_bot_settings(
+    name: String,
+    values: BTreeMap<String, serde_json::Value>,
+    state: State<'_, AppState>,
+) -> CmdResult<()> {
+    let dir = state.config.read().await.bot.dir.clone();
+    let resolved = resolve_dir(Path::new(&dir));
+    let registry = BotRegistry::scan(&resolved).map_err(|e| format!("scan bots: {e:#}"))?;
+    let entry = registry
+        .find(&name)
+        .ok_or_else(|| format!("bot {name:?} not found"))?;
+    let manifest = entry
+        .manifest
+        .as_ref()
+        .ok_or_else(|| format!("bot {name:?} has no manifest.toml"))?;
+    manifest::save_values(&entry.dir, manifest, &values)
+        .map_err(|e| format!("save settings: {e:#}"))?;
+    let _ = state
+        .notify_bus
+        .send(Notification::success(format!("{name} settings saved")));
+    Ok(())
 }
 
 /// Update `bot.active` in config + persist. Doesn't restart the running
@@ -173,6 +231,8 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::update_config,
             $crate::ipc::commands::list_bots,
             $crate::ipc::commands::set_active_bot,
+            $crate::ipc::commands::get_bot_settings,
+            $crate::ipc::commands::update_bot_settings,
             $crate::ipc::commands::start_proxy,
             $crate::ipc::commands::stop_proxy,
             $crate::ipc::commands::get_status,

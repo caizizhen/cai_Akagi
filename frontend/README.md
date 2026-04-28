@@ -152,14 +152,16 @@ Fires after every event the analysis engine processes. See [`AnalysisResult` sch
 
 ## Commands (frontend → backend)
 
-Eleven commands. All async. Errors return as `string` (Tauri convention).
+Thirteen commands. All async. Errors return as `string` (Tauri convention).
 
 | Command | Args | Returns | Purpose |
 |---|---|---|---|
 | `get_config` | — | `AppConfig` | Current loaded config |
 | `update_config` | `(new_config: AppConfig)` | `void` | Persist new config to file |
-| `list_bots` | — | `BotInfo[]` | Scan `mjai_bot/` for available bots |
+| `list_bots` | — | `BotInfo[]` | Scan `mjai_bot/` for available bots (each entry includes its manifest, if any) |
 | `set_active_bot` | `(name: string)` | `void` | Set `bot.active` in config |
+| `get_bot_settings` | `(name: string)` | `BotSettings` | Manifest schema + current values for one bot |
+| `update_bot_settings` | `(name: string, values: Record<string, unknown>)` | `void` | Validate against manifest + persist to bot's `settings.toml` |
 | `start_proxy` | — | `void` | Spawn MITM proxy |
 | `stop_proxy` | — | `void` | Graceful shutdown |
 | `get_status` | — | `Snapshot` | One-shot dump of current config + bot + proxy + log dir |
@@ -220,8 +222,52 @@ type BotInfo = {
   name: string;        // subdir name under bot.dir
   dir: string;         // absolute resolved path
   has_pyproject: boolean;
+  manifest?: Manifest; // present when the bot ships a manifest.toml
 };
 ```
+
+### `Manifest` / `BotSettings`
+
+```ts
+type Manifest = {
+  manifest_version: number;        // currently 1
+  bot: {
+    name: string;
+    display?: string;
+    description?: string;
+    version?: string;
+  };
+  source?:                          // Phase 3 — install pointer
+    | { type: 'github_release'; repo: string; asset_glob?: string };
+  settings: Record<string, FieldSpec>;
+};
+
+type FieldKind = 'string' | 'bool' | 'int' | 'float' | 'enum';
+
+type FieldSpec = {
+  type: FieldKind;
+  label: string;
+  default: unknown;        // shape matches `type` (string/bool/number/enum-string)
+  help?: string;
+  secret?: boolean;        // render as password input + redact in logs
+  min?: number;            // int / float
+  max?: number;            // int / float
+  step?: number;           // int / float
+  choices?: string[];      // enum
+};
+
+// `get_bot_settings` returns:
+type BotSettings = {
+  manifest: Manifest;                       // schema (form definition)
+  values: Record<string, unknown>;          // current values (form state)
+};
+```
+
+`update_bot_settings` validates each value against the matching `FieldSpec`
+(type match, numeric bounds, enum choice). Validation errors come back as
+the Tauri command error string. Settings take effect on the **next**
+`start_game` event — the running bot keeps its current values. The frontend
+should warn on save.
 
 ### `Snapshot`
 

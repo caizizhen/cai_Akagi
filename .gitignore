@@ -22,6 +22,9 @@ mjai_bot/*/.akagi/
 mjai_bot/*/uv.lock
 mjai_bot/*/.venv/
 
+# Per-bot user-edited settings (manifest.toml ships with the bot; settings.toml does not)
+mjai_bot/*/settings.toml
+
 # Tauri
 gen/
 

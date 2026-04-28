@@ -145,11 +145,27 @@ use std::path::PathBuf;
 
 /// One discovered bot, IPC-shaped (separate from `bot::BotEntry` so the
 /// wire contract can evolve independently of the registry internals).
+///
+/// `manifest` carries the bot's settings schema (rendered as a form on
+/// the frontend). Bots without a `manifest.toml` have it set to `None`
+/// and the UI hides the settings panel for them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BotInfo {
     pub name: String,
     pub dir: String,
     pub has_pyproject: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest: Option<crate::bot::manifest::Manifest>,
+}
+
+/// Returned by the `get_bot_settings` command. `values` is the result of
+/// merging defaults from `manifest` with whatever lives in the bot's
+/// `settings.toml`. Frontend should treat `manifest.settings` as the form
+/// schema and `values` as the form's current state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotSettings {
+    pub manifest: crate::bot::manifest::Manifest,
+    pub values: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 /// One-shot dump of everything the UI needs on startup. Cheap to clone

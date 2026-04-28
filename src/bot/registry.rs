@@ -8,11 +8,13 @@
 //! `BotRunner` / `PythonRuntime` machinery is responsible for actually
 //! launching anything.
 
+use crate::bot::manifest::Manifest;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
+use tracing::warn;
 
 /// One discovered bot.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BotEntry {
     /// Subdirectory name (the user-facing identifier, e.g. `"mortal"`).
     pub name: String,
@@ -20,6 +22,10 @@ pub struct BotEntry {
     pub dir: PathBuf,
     /// Path to `pyproject.toml` if present, else `None`.
     pub pyproject: Option<PathBuf>,
+    /// Parsed `manifest.toml` if the bot ships one. Bots without a
+    /// manifest still appear in the registry — they just lack any
+    /// configurable settings.
+    pub manifest: Option<Manifest>,
 }
 
 /// Snapshot of bot directories at scan time.
@@ -65,10 +71,24 @@ impl BotRegistry {
                 continue;
             }
             let pyproject = path.join("pyproject.toml");
+            let manifest = match Manifest::load(&path) {
+                Ok(m) => m,
+                Err(e) => {
+                    // A malformed manifest shouldn't yank the bot off the
+                    // list — just log and continue without one. The user
+                    // sees the bot but can't open its settings panel.
+                    warn!(
+                        bot = %name,
+                        "failed to load manifest.toml: {e:#}",
+                    );
+                    None
+                }
+            };
             entries.push(BotEntry {
                 name: name.to_owned(),
                 dir: path.clone(),
                 pyproject: pyproject.is_file().then_some(pyproject),
+                manifest,
             });
         }
 
