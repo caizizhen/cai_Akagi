@@ -66,11 +66,31 @@ impl GameTracker {
             // Fresh game → fresh GameState. Constructor seeds round 0
             // (E-1) with default scores per `mode.starting_score()`.
             self.state = Some(GameState::new(0, true, None, 0, self.rule.clone()));
-            // Capture our perspective if the bridge tagged one.
-            if let Some(seat) = id {
-                self.our_seat = Some(*seat);
-            }
+            // Each new game may put us in a different seat (or none, in
+            // observer/replay mode). ALWAYS replace — never inherit stale
+            // perspective from the previous game.
+            self.our_seat = *id;
         }
+
+        // riichienv-core 0.4.8's `apply_mjai_event(Dahai)` pushes the tile
+        // onto `discards` but leaves the parallel `discard_from_hand` /
+        // `discard_is_riichi` arrays empty. Capture the bits we need
+        // pre-apply so we can patch them on after.
+        let dahai_patch = if let AkagiEvent::Dahai {
+            actor, tsumogiri, ..
+        } = ev
+        {
+            self.state.as_ref().map(|s| {
+                let actor = *actor as usize;
+                (
+                    actor,
+                    !*tsumogiri,                       // tedashi = !tsumogiri
+                    s.players[actor].riichi_stage,     // true = this dahai commits riichi
+                )
+            })
+        } else {
+            None
+        };
 
         let Some(ri) = convert::to_riichienv(ev)? else {
             return Ok(()); // Skipped (e.g. MjaiEvent::None).
@@ -78,6 +98,20 @@ impl GameTracker {
 
         if let Some(s) = self.state.as_mut() {
             s.apply_mjai_event(ri);
+
+            if let Some((actor, tedashi, was_riichi_commit)) = dahai_patch {
+                let p = &mut s.players[actor];
+                let n = p.discards.len();
+                if p.discard_from_hand.len() < n {
+                    p.discard_from_hand.push(tedashi);
+                }
+                if p.discard_is_riichi.len() < n {
+                    p.discard_is_riichi.push(was_riichi_commit);
+                }
+                if was_riichi_commit && p.riichi_declaration_index.is_none() {
+                    p.riichi_declaration_index = Some(n - 1);
+                }
+            }
         }
         Ok(())
     }
@@ -109,8 +143,15 @@ impl Default for GameTracker {
     }
 }
 
+/// Build an empty tracker handle without spawning a task. Caller is
+/// responsible for driving [`drive_loop`] on a runtime.
+pub fn new_handle() -> Arc<Mutex<GameTracker>> {
+    Arc::new(Mutex::new(GameTracker::new()))
+}
+
 /// Spawn a tracker task that consumes the given MJAI receiver. Returns
-/// a shared handle for snapshot access.
+/// a shared handle for snapshot access. Must be called from within a
+/// Tokio runtime context.
 ///
 /// The task ends cleanly when the broadcast channel closes (all
 /// `MjaiBus` senders dropped).
@@ -125,10 +166,21 @@ pub fn spawn_with_post(
     rx: broadcast::Receiver<AkagiEvent>,
     post: Option<broadcast::Sender<AkagiEvent>>,
 ) -> Arc<Mutex<GameTracker>> {
-    let tracker = Arc::new(Mutex::new(GameTracker::new()));
+    let tracker = new_handle();
     let cloned = tracker.clone();
-    tokio::spawn(async move { run(cloned, rx, post).await });
+    tokio::spawn(async move { drive_loop(cloned, rx, post).await });
     tracker
+}
+
+/// Drive the tracker loop on the current task. Returns when the
+/// broadcast channel closes. Use this when you want to spawn the loop
+/// on a runtime that isn't accessible at construction time.
+pub async fn drive_loop(
+    tracker: Arc<Mutex<GameTracker>>,
+    rx: broadcast::Receiver<AkagiEvent>,
+    post: Option<broadcast::Sender<AkagiEvent>>,
+) {
+    run(tracker, rx, post).await
 }
 
 async fn run(
@@ -244,6 +296,96 @@ mod tests {
         t.handle(&start_game()).unwrap();
         let second = t.snapshot().unwrap();
         assert_eq!(second.oya, 0, "fresh state defaults to oya=0");
+    }
+
+    fn start_game_with_seat(seat: Option<u8>) -> AkagiEvent {
+        AkagiEvent::StartGame {
+            names: ["a".into(), "b".into(), "c".into(), "d".into()],
+            kyoku_first: None,
+            aka_flag: None,
+            id: seat,
+        }
+    }
+
+    #[test]
+    fn start_game_replaces_our_seat_each_time() {
+        let mut t = GameTracker::new();
+        // First game — seat 0.
+        t.handle(&start_game_with_seat(Some(0))).unwrap();
+        assert_eq!(t.our_seat(), Some(0));
+
+        // Second game — seat 2 (different table position).
+        t.handle(&start_game_with_seat(Some(2))).unwrap();
+        assert_eq!(t.our_seat(), Some(2), "must adopt new seat");
+
+        // Third game — observer/replay mode, no perspective tag.
+        // Stale Some(2) MUST NOT carry over.
+        t.handle(&start_game_with_seat(None)).unwrap();
+        assert_eq!(
+            t.our_seat(),
+            None,
+            "untagged start_game must clear stale seat"
+        );
+
+        // Fourth game — back to seat 1.
+        t.handle(&start_game_with_seat(Some(1))).unwrap();
+        assert_eq!(t.our_seat(), Some(1));
+    }
+
+    /// Regression: `riichienv-core 0.4.8::apply_mjai_event(Dahai)` does not
+    /// populate `discard_from_hand` / `discard_is_riichi`, so the snapshot
+    /// fell back to defaults and the mahgen river rendered with no
+    /// tedashi/tsumogiri/riichi markers. We patch the parallel arrays
+    /// inside `handle()` — verify the snapshot exposes correct flags.
+    #[test]
+    fn dahai_marker_arrays_stay_in_sync() {
+        let mut t = GameTracker::new();
+        t.handle(&start_game()).unwrap();
+        t.handle(&start_kyoku(0)).unwrap();
+
+        // Tsumogiri 1m (drew 1m, immediate cut).
+        t.handle(&AkagiEvent::Tsumo { actor: 0, pai: "1m".into() }).unwrap();
+        t.handle(&AkagiEvent::Dahai {
+            actor: 0,
+            pai: "1m".into(),
+            tsumogiri: true,
+        })
+        .unwrap();
+
+        // Tedashi 1m (drew 2m, cut a 1m from hand).
+        t.handle(&AkagiEvent::Tsumo { actor: 0, pai: "2m".into() }).unwrap();
+        t.handle(&AkagiEvent::Dahai {
+            actor: 0,
+            pai: "1m".into(),
+            tsumogiri: false,
+        })
+        .unwrap();
+
+        // Riichi declaration — Reach event then Dahai commits riichi.
+        t.handle(&AkagiEvent::Tsumo { actor: 0, pai: "3m".into() }).unwrap();
+        t.handle(&AkagiEvent::Reach { actor: 0 }).unwrap();
+        t.handle(&AkagiEvent::Dahai {
+            actor: 0,
+            pai: "1m".into(),
+            tsumogiri: false,
+        })
+        .unwrap();
+
+        let snap = t.snapshot().unwrap();
+        let p0 = &snap.players[0];
+        assert_eq!(p0.river.len(), 3, "three discards recorded");
+
+        // 1: tsumogiri, no riichi
+        assert!(!p0.river[0].tedashi);
+        assert!(!p0.river[0].is_riichi);
+        // 2: tedashi, no riichi
+        assert!(p0.river[1].tedashi);
+        assert!(!p0.river[1].is_riichi);
+        // 3: tedashi + riichi commit
+        assert!(p0.river[2].tedashi);
+        assert!(p0.river[2].is_riichi);
+
+        assert_eq!(p0.riichi_declaration_index, Some(2));
     }
 
     #[test]

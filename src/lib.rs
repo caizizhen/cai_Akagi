@@ -57,26 +57,18 @@ pub fn run() {
     let proxy_enabled = cfg.proxy.enabled;
     let bot_cfg = cfg.bot.clone();
 
-    // Game-state tracker subscribes to the MJAI bus before AppState is
-    // built so the Arc handle goes straight into state for future IPC
-    // commands. The tracker task ends when all bus senders drop. It also
-    // re-emits each handled event on `post_tracker_bus` so the analysis
-    // runner can rely on the snapshot being current.
-    let game_tracker = game_state::spawn_with_post(
-        mjai_bus.subscribe(),
-        Some(post_tracker_bus.clone()),
-    );
-
-    // Analysis runner: subscribes to the post-tracker bus, runs analyze,
-    // broadcasts on analysis_bus, and caches the latest result for the
-    // `get_analysis` Tauri command.
+    // Game-state tracker handle is built up front so AppState can carry
+    // the Arc, but the consumer task is spawned inside `.setup()` once
+    // the Tauri Tokio runtime is live (sync `lib::run` has no runtime).
+    let game_tracker = game_state::tracker::new_handle();
     let analysis_cache = std::sync::Arc::new(tokio::sync::RwLock::new(None));
-    analysis::runner::spawn(
-        post_tracker_bus.subscribe(),
-        game_tracker.clone(),
-        analysis_bus.clone(),
-        analysis_cache.clone(),
-    );
+
+    let tracker_rx = mjai_bus.subscribe();
+    let tracker_post = post_tracker_bus.clone();
+    let analysis_rx = post_tracker_bus.subscribe();
+    let analysis_tracker = game_tracker.clone();
+    let analysis_bus_for_runner = analysis_bus.clone();
+    let analysis_cache_for_runner = analysis_cache.clone();
 
     let state = ipc::AppState::new(
         cfg,
@@ -98,6 +90,20 @@ pub fn run() {
             let state = state.clone();
             move |app| {
                 ipc::install(&app.handle(), state.clone())?;
+
+                // Spawn tracker + analysis loops inside the Tauri Tokio
+                // runtime — `lib::run` itself is sync.
+                tauri::async_runtime::spawn(game_state::tracker::drive_loop(
+                    state.game_tracker.clone(),
+                    tracker_rx,
+                    Some(tracker_post),
+                ));
+                tauri::async_runtime::spawn(analysis::runner::drive_loop(
+                    analysis_rx,
+                    analysis_tracker,
+                    analysis_bus_for_runner,
+                    analysis_cache_for_runner,
+                ));
 
                 if bot_enabled {
                     let mjai_for_bot = mjai_bus.clone();

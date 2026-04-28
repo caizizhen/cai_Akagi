@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Akagi Debug</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+      background: #0a0e10;
+      color: #d8e0e0;
+      font-size: 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 100vh;
+    }
+    .pane { display: flex; flex-direction: column; min-height: 0; }
+    .pane + .pane { border-left: 1px solid #1f2a2e; }
+    .toolbar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 10px;
+      background: #0e1416;
+      border-bottom: 1px solid #1f2a2e;
+      flex: 0 0 auto;
+    }
+    .toolbar h2 { margin: 0; font-size: 12px; color: #34d399; letter-spacing: .08em; text-transform: uppercase; }
+    .toolbar .grow { flex: 1; }
+    .toolbar button {
+      background: #131c1f; color: #cfdadc; border: 1px solid #243036;
+      padding: 3px 9px; cursor: pointer; font-family: inherit; font-size: 11px;
+      border-radius: 3px;
+    }
+    .toolbar button:hover { background: #1a262a; }
+    .toolbar label { font-size: 11px; color: #889; }
+    .tag {
+      background: #1a262a; border: 1px solid #243036; color: #aab;
+      padding: 1px 6px; border-radius: 9px; font-size: 10px;
+    }
+    .scroll { flex: 1 1 auto; overflow: auto; padding: 6px 10px; }
+
+    /* events */
+    .filter-bar {
+      display: flex; flex-wrap: wrap; gap: 4px;
+      padding: 6px 10px;
+      background: #0c1214;
+      border-bottom: 1px solid #1f2a2e;
+    }
+    .chip {
+      font-size: 10px; padding: 2px 8px; border-radius: 9px;
+      background: #131c1f; color: #889; border: 1px solid #243036;
+      cursor: pointer; user-select: none;
+    }
+    .chip.on { background: #1a3a31; border-color: #34d399; color: #34d399; }
+
+    .row {
+      border-bottom: 1px dashed #1a2226;
+      padding: 5px 0;
+    }
+    .row .head { display: flex; gap: 8px; align-items: baseline; }
+    .ts { color: #5d6e72; font-size: 10px; }
+    .evt { color: #fbbf24; font-weight: 600; }
+    .row pre {
+      margin: 4px 0 0; white-space: pre-wrap; word-break: break-word;
+      color: #9fb3b1; font-size: 11px; line-height: 1.45;
+    }
+
+    /* commands */
+    .cmd {
+      display: flex; gap: 6px; align-items: center;
+      padding: 4px 0;
+    }
+    .cmd .name { color: #9bd1c5; flex: 1; }
+    .cmd .args {
+      flex: 2; background: #0c1214; border: 1px solid #1f2a2e;
+      color: #cfdadc; padding: 3px 6px; border-radius: 3px;
+      font-family: inherit; font-size: 11px;
+    }
+    .cmd button {
+      background: #1a3a31; color: #34d399; border: 1px solid #34d39955;
+      padding: 3px 10px; cursor: pointer; font-family: inherit; font-size: 11px;
+      border-radius: 3px;
+    }
+    .cmd button:hover { background: #224a3e; }
+    .out {
+      margin: 0 0 6px; padding: 6px 8px;
+      background: #0c1214; border-left: 2px solid #243036;
+      white-space: pre-wrap; word-break: break-word; color: #9fb3b1;
+      font-size: 11px; max-height: 200px; overflow: auto;
+    }
+    .out.err { border-left-color: #f87171; color: #fca5a5; }
+    .section-title {
+      margin: 12px 0 4px; color: #34d399; font-size: 11px;
+      letter-spacing: .08em; text-transform: uppercase;
+    }
+    .custom-row textarea, .custom-row input {
+      width: 100%; background: #0c1214; border: 1px solid #1f2a2e;
+      color: #cfdadc; padding: 4px 6px; border-radius: 3px;
+      font-family: inherit; font-size: 11px;
+    }
+    .custom-row textarea { resize: vertical; min-height: 50px; margin-top: 4px; }
+    .custom-row .actions { display: flex; gap: 6px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+  <!-- LEFT: event stream -->
+  <section class="pane">
+    <div class="toolbar">
+      <h2>IPC Events</h2>
+      <span class="tag" id="count">0</span>
+      <span class="grow"></span>
+      <label><input type="checkbox" id="autoscroll" checked /> autoscroll</label>
+      <label><input type="checkbox" id="paused" /> pause</label>
+      <button id="clear">clear</button>
+    </div>
+    <div class="filter-bar" id="filters"></div>
+    <div class="scroll" id="events"></div>
+  </section>
+
+  <!-- RIGHT: command invoker -->
+  <section class="pane">
+    <div class="toolbar">
+      <h2>Commands</h2>
+      <span class="grow"></span>
+      <button id="clear-out">clear out</button>
+    </div>
+    <div class="scroll">
+      <div id="cmds"></div>
+
+      <div class="section-title">Custom invoke</div>
+      <div class="custom-row">
+        <input id="custom-name" placeholder="command name (e.g. set_active_bot)" />
+        <textarea id="custom-args" placeholder='args JSON, e.g. {"name":"mortal"}'></textarea>
+        <div class="actions">
+          <button id="custom-run">invoke</button>
+        </div>
+        <pre class="out" id="custom-out"></pre>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    const { invoke } = window.__TAURI__.core;
+    const { listen } = window.__TAURI__.event;
+
+    // ---- events ----
+    const EVENT_NAMES = [
+      'mjai-event',
+      'bot-response',
+      'bot-status',
+      'proxy-status',
+      'notify',
+      'analysis-result',
+    ];
+
+    const enabled = new Set(EVENT_NAMES);
+    const filtersEl = document.getElementById('filters');
+    EVENT_NAMES.forEach((n) => {
+      const chip = document.createElement('span');
+      chip.className = 'chip on';
+      chip.textContent = n;
+      chip.onclick = () => {
+        if (enabled.has(n)) { enabled.delete(n); chip.classList.remove('on'); }
+        else { enabled.add(n); chip.classList.add('on'); }
+      };
+      filtersEl.appendChild(chip);
+    });
+
+    const eventsEl = document.getElementById('events');
+    const countEl = document.getElementById('count');
+    const autoscrollEl = document.getElementById('autoscroll');
+    const pausedEl = document.getElementById('paused');
+    let count = 0;
+
+    function ts() {
+      const d = new Date();
+      return d.toISOString().slice(11, 23);
+    }
+
+    function logEvent(name, payload) {
+      if (pausedEl.checked) return;
+      if (!enabled.has(name)) return;
+      count++;
+      countEl.textContent = String(count);
+      const row = document.createElement('div');
+      row.className = 'row';
+      const head = document.createElement('div');
+      head.className = 'head';
+      head.innerHTML = `<span class="ts">${ts()}</span><span class="evt">${name}</span>`;
+      const pre = document.createElement('pre');
+      try { pre.textContent = JSON.stringify(payload, null, 2); }
+      catch { pre.textContent = String(payload); }
+      row.appendChild(head);
+      row.appendChild(pre);
+      eventsEl.prepend(row);
+      if (autoscrollEl.checked) eventsEl.scrollTop = 0;
+      // cap to 500 rows
+      while (eventsEl.children.length > 500) eventsEl.lastChild.remove();
+    }
+
+    EVENT_NAMES.forEach((n) => listen(n, (e) => logEvent(n, e.payload)));
+
+    document.getElementById('clear').onclick = () => {
+      eventsEl.innerHTML = '';
+      count = 0;
+      countEl.textContent = '0';
+    };
+
+    // ---- commands ----
+    const COMMANDS = [
+      { name: 'get_config' },
+      { name: 'get_status' },
+      { name: 'get_log_dir' },
+      { name: 'list_bots' },
+      { name: 'get_analysis' },
+      { name: 'get_game_snapshot' },
+      { name: 'get_mahgen_view' },
+      { name: 'start_proxy' },
+      { name: 'stop_proxy' },
+      { name: 'set_active_bot', args: { name: 'mortal' } },
+      { name: 'update_config', args: { newConfig: {} }, hint: 'replace whole AppConfig — careful' },
+    ];
+
+    const cmdsEl = document.getElementById('cmds');
+    const outputs = [];
+
+    COMMANDS.forEach((c) => {
+      const wrap = document.createElement('div');
+
+      const row = document.createElement('div');
+      row.className = 'cmd';
+
+      const label = document.createElement('span');
+      label.className = 'name';
+      label.textContent = c.name;
+      row.appendChild(label);
+
+      const argsEl = document.createElement('input');
+      argsEl.className = 'args';
+      argsEl.placeholder = c.hint || 'args JSON (default {})';
+      argsEl.value = c.args ? JSON.stringify(c.args) : '';
+      row.appendChild(argsEl);
+
+      const btn = document.createElement('button');
+      btn.textContent = 'run';
+      row.appendChild(btn);
+
+      const out = document.createElement('pre');
+      out.className = 'out';
+      out.style.display = 'none';
+
+      btn.onclick = async () => {
+        let args = {};
+        const txt = argsEl.value.trim();
+        if (txt.length) {
+          try { args = JSON.parse(txt); }
+          catch (e) {
+            out.style.display = 'block';
+            out.classList.add('err');
+            out.textContent = 'arg JSON parse error: ' + e.message;
+            return;
+          }
+        }
+        out.style.display = 'block';
+        out.classList.remove('err');
+        out.textContent = '...';
+        try {
+          const res = await invoke(c.name, args);
+          out.textContent = `[${ts()}] OK\n` + JSON.stringify(res, null, 2);
+        } catch (e) {
+          out.classList.add('err');
+          out.textContent = `[${ts()}] ERR\n` + (typeof e === 'string' ? e : JSON.stringify(e, null, 2));
+        }
+      };
+
+      wrap.appendChild(row);
+      wrap.appendChild(out);
+      cmdsEl.appendChild(wrap);
+      outputs.push(out);
+    });
+
+    document.getElementById('clear-out').onclick = () => {
+      outputs.forEach((o) => { o.textContent = ''; o.style.display = 'none'; o.classList.remove('err'); });
+      const co = document.getElementById('custom-out');
+      co.textContent = ''; co.classList.remove('err');
+    };
+
+    // ---- custom invoke ----
+    document.getElementById('custom-run').onclick = async () => {
+      const name = document.getElementById('custom-name').value.trim();
+      const argsTxt = document.getElementById('custom-args').value.trim() || '{}';
+      const out = document.getElementById('custom-out');
+      out.classList.remove('err');
+      if (!name) {
+        out.classList.add('err');
+        out.textContent = 'command name required';
+        return;
+      }
+      let args;
+      try { args = JSON.parse(argsTxt); }
+      catch (e) {
+        out.classList.add('err');
+        out.textContent = 'arg JSON parse error: ' + e.message;
+        return;
+      }
+      out.textContent = '...';
+      try {
+        const res = await invoke(name, args);
+        out.textContent = `[${ts()}] OK\n` + JSON.stringify(res, null, 2);
+      } catch (e) {
+        out.classList.add('err');
+        out.textContent = `[${ts()}] ERR\n` + (typeof e === 'string' ? e : JSON.stringify(e, null, 2));
+      }
+    };
+  </script>
+</body>
+</html>

@@ -306,6 +306,12 @@ impl BotManager {
             // Others' calls / discards may open a chi/pon/kan/ron window.
             MjaiEvent::Dahai { actor, .. } => *actor != me,
             MjaiEvent::Kakan { actor, .. } => *actor != me,
+            // Own calls without a following rinshan tsumo: bot must pick
+            // the post-call discard. ankan/kakan get a rinshan Tsumo that
+            // flushes anyway, so they stay out of this set.
+            MjaiEvent::Chi { actor, .. }
+            | MjaiEvent::Pon { actor, .. }
+            | MjaiEvent::Daiminkan { actor, .. } => *actor == me,
             // Round / game boundaries: bot may want to flush state.
             MjaiEvent::ReachAccepted { .. }
             | MjaiEvent::Hora { .. }
@@ -313,9 +319,9 @@ impl BotManager {
             | MjaiEvent::EndKyoku
             | MjaiEvent::EndGame => true,
             // Everything else (start_game/start_kyoku, our own dahai,
-            // chi/pon/daiminkan/ankan, dora reveal, reach declaration)
-            // accumulates without bothering the bot — its state catches
-            // up the next time we flush.
+            // ankan/kakan, dora reveal, reach declaration) accumulates
+            // without bothering the bot — its state catches up the next
+            // time we flush.
             _ => false,
         }
     }
@@ -502,6 +508,76 @@ mod tests {
         assert_eq!(calls.len(), 1);
         // Both events flushed in the batch.
         assert_eq!(calls[0].len(), 2);
+    }
+
+    #[tokio::test]
+    async fn own_pon_flushes_so_bot_picks_post_call_discard() {
+        let (mut mgr, calls, _, _, _) = manager_with_mock(vec![]);
+
+        // Others' dahai (actor 0) — flushes the batch as the call window.
+        mgr.handle(dahai(0)).await.unwrap();
+        assert_eq!(calls.lock().await.len(), 1);
+
+        // Our pon: must also be a decision point so the bot returns the
+        // post-call discard. Without the flush, manager would buffer it
+        // forever — no rinshan tsumo follows pon.
+        mgr.handle(MjaiEvent::Pon {
+            actor: 2,
+            target: 0,
+            pai: "1m".into(),
+            consumed: ["1m".into(), "1m".into()],
+        })
+        .await
+        .unwrap();
+
+        let calls = calls.lock().await;
+        assert_eq!(calls.len(), 2, "own pon must trigger react()");
+        assert!(matches!(
+            calls[1].last().unwrap(),
+            MjaiEvent::Pon { actor: 2, .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn own_chi_and_daiminkan_also_flush() {
+        let (mut mgr, calls, _, _, _) = manager_with_mock(vec![]);
+
+        mgr.handle(MjaiEvent::Chi {
+            actor: 2,
+            target: 1,
+            pai: "3m".into(),
+            consumed: ["4m".into(), "5m".into()],
+        })
+        .await
+        .unwrap();
+        assert_eq!(calls.lock().await.len(), 1, "own chi must flush");
+
+        mgr.handle(MjaiEvent::Daiminkan {
+            actor: 2,
+            target: 0,
+            pai: "5m".into(),
+            consumed: ["5m".into(), "5m".into(), "5mr".into()],
+        })
+        .await
+        .unwrap();
+        assert_eq!(calls.lock().await.len(), 2, "own daiminkan must flush");
+    }
+
+    #[tokio::test]
+    async fn others_pon_does_not_flush() {
+        let (mut mgr, calls, _, _, _) = manager_with_mock(vec![]);
+        mgr.handle(MjaiEvent::Pon {
+            actor: 0,
+            target: 3,
+            pai: "1m".into(),
+            consumed: ["1m".into(), "1m".into()],
+        })
+        .await
+        .unwrap();
+        assert!(
+            calls.lock().await.is_empty(),
+            "others' pon: bot has nothing to do, must not flush"
+        );
     }
 
     #[tokio::test]

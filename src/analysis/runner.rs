@@ -23,7 +23,8 @@ use crate::schema::MjaiEvent;
 /// freshest snapshot without waiting for the next `analysis-result` event.
 pub type AnalysisCache = Arc<RwLock<Option<AnalysisResult>>>;
 
-/// Spawn the analysis runner task.
+/// Spawn the analysis runner task. Must be called from within a Tokio
+/// runtime context.
 pub fn spawn(
     mut rx: broadcast::Receiver<MjaiEvent>,
     tracker: Arc<Mutex<GameTracker>>,
@@ -33,6 +34,18 @@ pub fn spawn(
     tokio::spawn(async move {
         run(&mut rx, tracker, bus, cache).await;
     });
+}
+
+/// Drive the analysis loop on the current task. Returns when the
+/// post-tracker bus closes. Use this when you want to spawn the loop on
+/// a runtime that isn't accessible at construction time.
+pub async fn drive_loop(
+    mut rx: broadcast::Receiver<MjaiEvent>,
+    tracker: Arc<Mutex<GameTracker>>,
+    bus: AnalysisBus,
+    cache: AnalysisCache,
+) {
+    run(&mut rx, tracker, bus, cache).await
 }
 
 async fn run(
