@@ -152,7 +152,7 @@ Fires after every event the analysis engine processes. See [`AnalysisResult` sch
 
 ## Commands (frontend → backend)
 
-Thirteen commands. All async. Errors return as `string` (Tauri convention).
+Fifteen commands. All async. Errors return as `string` (Tauri convention).
 
 | Command | Args | Returns | Purpose |
 |---|---|---|---|
@@ -162,6 +162,8 @@ Thirteen commands. All async. Errors return as `string` (Tauri convention).
 | `set_active_bot` | `(name: string)` | `void` | Set `bot.active` in config |
 | `get_bot_settings` | `(name: string)` | `BotSettings` | Manifest schema + current values for one bot |
 | `update_bot_settings` | `(name: string, values: Record<string, unknown>)` | `void` | Validate against manifest + persist to bot's `settings.toml` |
+| `install_bot_from_github` | `(repo: string, assetGlob?: string, name?: string)` | `BotInfo` | Download latest release zip + extract into `mjai_bot/<name>/` |
+| `update_bot_from_manifest` | `(name: string)` | `BotInfo` | Reinstall using `[bot.source]` from the bot's existing manifest |
 | `start_proxy` | — | `void` | Spawn MITM proxy |
 | `stop_proxy` | — | `void` | Graceful shutdown |
 | `get_status` | — | `Snapshot` | One-shot dump of current config + bot + proxy + log dir |
@@ -268,6 +270,14 @@ type BotSettings = {
 the Tauri command error string. Settings take effect on the **next**
 `start_game` event — the running bot keeps its current values. The frontend
 should warn on save.
+
+`install_bot_from_github` and `update_bot_from_manifest` push progress
+through the `notify` event with sticky id `bot-install-<name>` (info →
+info → success). The frontend should subscribe and dismiss the sticky
+toast when it sees the matching success entry. `install_bot_from_github`
+refuses to overwrite an existing `mjai_bot/<name>/`; offer the user a
+"Remove and reinstall" toggle that calls `update_bot_from_manifest` (or
+deletes via the file browser) instead.
 
 ### `Snapshot`
 

@@ -6,8 +6,9 @@
 //! names quickly and renames break dashboards.
 
 use crate::analysis::result::AnalysisResult;
-use crate::bot::manifest;
-use crate::bot::BotRegistry;
+use crate::bot::install::{self, GithubInstallSpec};
+use crate::bot::manifest::{self, BotSource};
+use crate::bot::{BotEntry, BotRegistry};
 use crate::config::AppConfig;
 use crate::game_state::mahgen_view::MahgenView;
 use crate::game_state::snapshot::GameStateSnapshot;
@@ -18,6 +19,15 @@ use crate::util::resolve_dir;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tauri::State;
+
+fn entry_to_info(e: &BotEntry) -> BotInfo {
+    BotInfo {
+        name: e.name.clone(),
+        dir: e.dir.to_string_lossy().into_owned(),
+        has_pyproject: e.pyproject.is_some(),
+        manifest: e.manifest.clone(),
+    }
+}
 
 type CmdResult<T> = Result<T, String>;
 
@@ -48,16 +58,7 @@ pub async fn list_bots(state: State<'_, AppState>) -> CmdResult<Vec<BotInfo>> {
     let dir = state.config.read().await.bot.dir.clone();
     let resolved = resolve_dir(Path::new(&dir));
     let registry = BotRegistry::scan(&resolved).map_err(|e| format!("scan bots: {e:#}"))?;
-    Ok(registry
-        .entries()
-        .iter()
-        .map(|e| BotInfo {
-            name: e.name.clone(),
-            dir: e.dir.to_string_lossy().into_owned(),
-            has_pyproject: e.pyproject.is_some(),
-            manifest: e.manifest.clone(),
-        })
-        .collect())
+    Ok(registry.entries().iter().map(entry_to_info).collect())
 }
 
 /// Read the merged settings (manifest + on-disk values) for one bot.
@@ -128,6 +129,74 @@ pub async fn set_active_bot(name: String, state: State<'_, AppState>) -> CmdResu
         .notify_bus
         .send(Notification::success(format!("Active bot set to {name}")));
     Ok(())
+}
+
+/// Install a bot by downloading the latest release zip from a GitHub
+/// repository. Refuses to overwrite an existing `mjai_bot/<name>/` —
+/// the user must remove it first via the file browser. The installer
+/// reports progress through `NotifyBus` with sticky id
+/// `bot-install-<name>`.
+#[tauri::command]
+pub async fn install_bot_from_github(
+    repo: String,
+    asset_glob: Option<String>,
+    name: Option<String>,
+    state: State<'_, AppState>,
+) -> CmdResult<BotInfo> {
+    let dir = state.config.read().await.bot.dir.clone();
+    let resolved = resolve_dir(Path::new(&dir));
+    std::fs::create_dir_all(&resolved)
+        .map_err(|e| format!("create bot dir {}: {e}", resolved.display()))?;
+
+    let spec = GithubInstallSpec {
+        repo,
+        asset_glob,
+        name,
+    };
+    let entry = install::install_from_github_release(spec, &resolved, &state.notify_bus)
+        .await
+        .map_err(|e| format!("install: {e:#}"))?;
+    Ok(entry_to_info(&entry))
+}
+
+/// Reinstall a bot from the GitHub source declared in its existing
+/// `manifest.toml`. Removes the current install first.
+#[tauri::command]
+pub async fn update_bot_from_manifest(
+    name: String,
+    state: State<'_, AppState>,
+) -> CmdResult<BotInfo> {
+    let dir = state.config.read().await.bot.dir.clone();
+    let resolved = resolve_dir(Path::new(&dir));
+    let registry = BotRegistry::scan(&resolved).map_err(|e| format!("scan bots: {e:#}"))?;
+    let entry = registry
+        .find(&name)
+        .ok_or_else(|| format!("bot {name:?} not found"))?;
+    let manifest = entry
+        .manifest
+        .as_ref()
+        .ok_or_else(|| format!("bot {name:?} has no manifest.toml"))?;
+    let source = manifest
+        .source
+        .as_ref()
+        .ok_or_else(|| format!("bot {name:?} manifest has no [bot.source] block"))?;
+
+    let (repo, asset_glob) = match source {
+        BotSource::GithubRelease { repo, asset_glob } => (repo.clone(), asset_glob.clone()),
+    };
+
+    std::fs::remove_dir_all(&entry.dir)
+        .map_err(|e| format!("remove old install {}: {e}", entry.dir.display()))?;
+
+    let spec = GithubInstallSpec {
+        repo,
+        asset_glob,
+        name: Some(name.clone()),
+    };
+    let new_entry = install::install_from_github_release(spec, &resolved, &state.notify_bus)
+        .await
+        .map_err(|e| format!("install: {e:#}"))?;
+    Ok(entry_to_info(&new_entry))
 }
 
 #[tauri::command]
@@ -233,6 +302,8 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::set_active_bot,
             $crate::ipc::commands::get_bot_settings,
             $crate::ipc::commands::update_bot_settings,
+            $crate::ipc::commands::install_bot_from_github,
+            $crate::ipc::commands::update_bot_from_manifest,
             $crate::ipc::commands::start_proxy,
             $crate::ipc::commands::stop_proxy,
             $crate::ipc::commands::get_status,

@@ -152,10 +152,11 @@ make Akagi a derived work of the bot.
 
 Because of this isolation, bots are not bundled in this repo and must be
 obtained separately. Only the rule-based `mjai_bot/example/` ships in tree
-as a known-good reference. For NN bots like Mortal, you currently fetch the
-upstream release yourself (binary + weights) and drop it under
-`mjai_bot/<name>/` matching the layout below. Auto-download from a GitHub
-release URL configured per-bot is on the roadmap (see TODO).
+as a known-good reference. For NN bots like Mortal, fetch them via the
+`install_bot_from_github` IPC command (or the matching frontend button),
+which downloads the latest release zip from a public GitHub repo and
+drops it into `mjai_bot/<name>/`. Manual placement still works for repos
+without published releases.
 
 ### Bot layout
 
@@ -179,7 +180,7 @@ working reference.
 - [ ] Complete frontend
 - [ ] 3-player mahjong
 - [ ] Other platforms (Tenhou / RiichiCity)
-- [ ] Download mjai bot from GitHub repo link (per-bot release URL → auto-fetch into `mjai_bot/<name>/`)
+- [x] Download mjai bot from GitHub repo link (per-bot release URL → auto-fetch into `mjai_bot/<name>/`)
 
 ---
 

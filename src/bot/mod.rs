@@ -8,6 +8,7 @@
 //! See `claude_plan_bot_runner.md` for the full design and `README.md` in
 //! this directory for the contributor-facing how-to.
 
+pub mod install;
 pub mod manager;
 pub mod manifest;
 pub mod registry;
@@ -15,6 +16,7 @@ pub mod runner;
 pub mod runtime;
 pub mod types;
 
+pub use install::{GithubInstallSpec, install_from_github_release};
 pub use manager::BotManager;
 pub use manifest::{BotSource, FieldKind, FieldSpec, Manifest, ManifestBot};
 pub use registry::{BotEntry, BotRegistry};

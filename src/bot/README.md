@@ -11,6 +11,8 @@ bridge to them.
   the frontend renders it.
 - `manifest` — per-bot `manifest.toml` schema + `settings.toml` values.
   See "Per-bot settings" below.
+- `install` — fetch a release zip from GitHub, validate it, and drop it
+  into `mjai_bot/<name>/`. See "Installing from GitHub" below.
 - `registry` — discovers bot directories under `mjai_bot/`. No Python
   invocation; only filesystem layout. Populates `BotEntry.manifest` from
   any `manifest.toml` found in the bot directory.
@@ -140,6 +142,44 @@ OS keychain integration is on the roadmap; until then, treat
 Updating settings does **not** restart the running bot subprocess. The
 new values take effect on the next `start_game` event. The frontend
 should warn the user accordingly.
+
+## Installing from GitHub
+
+The `install_bot_from_github` IPC command fetches the latest release of
+a public GitHub repo, picks one asset, and drops it into
+`mjai_bot/<name>/`. Frontend usage:
+
+```ts
+const info: BotInfo = await invoke('install_bot_from_github', {
+  repo: 'Equim-chan/Mortal',          // owner/name
+  assetGlob: 'mortal-v*.zip',         // optional; first .zip if omitted
+  name: 'mortal',                     // optional; defaults to repo's second segment
+});
+```
+
+Behaviour:
+
+- Refuses to overwrite an existing `mjai_bot/<name>/` — the user must
+  remove it first (or call `update_bot_from_manifest` for an explicit
+  reinstall).
+- Hits `https://api.github.com/repos/<repo>/releases/latest` anonymously.
+  No token support in v1; only public repos.
+- Asset selection: glob (rejecting zero or multiple matches) or first
+  asset whose name ends in `.zip`.
+- Streams the asset to a tempfile under `<bot_dir>/.downloads/`.
+- Validates the zip header before extracting; rejects entries with `..`
+  or absolute paths (zip-slip defence).
+- If the archive has a single top-level directory (typical for release
+  zips like `mortal-v0.5.0/…`), strips it.
+- Validates that the extracted layout contains `bot.py` at the top.
+- Atomic rename into `mjai_bot/<name>/`.
+- Progress is reported through `NotifyBus` with sticky id
+  `bot-install-<name>` (info → info → success).
+
+If the bot's `manifest.toml` declares a `[bot.source]` block, calling
+`update_bot_from_manifest(name)` re-runs the install using the recorded
+repo/glob. The previous `mjai_bot/<name>/` is removed first — settings
+and other bot-local files are not preserved.
 
 ## Why subprocess
 

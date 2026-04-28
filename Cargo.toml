@@ -30,6 +30,11 @@ prost = "0.14"
 prost-reflect = { version = "0.16", features = ["serde"] }
 base64 = "0.22"
 riichienv-core = "0.4.8"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "http2", "charset"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
+globset = "0.4"
+tempfile = "3"
+futures-util = "0.3"
 
 [dev-dependencies]
 tempfile = "3"
