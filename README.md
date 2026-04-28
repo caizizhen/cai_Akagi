@@ -210,3 +210,33 @@ plug strings into the element.
 | [`eric200203/mahgen`](https://github.com/eric200203/mahgen) (mahjong-tile rendering DSL) | `src/game_state/mahgen_view.rs`, frontend `<mah-gen>` | DSL syntax for pre-encoding hand / meld / river strings backend-side. |
 | [`smly/mjai.app`](https://github.com/smly/mjai.app) (mahjong AI competition platform) | `mjai_bot/`, `src/bot/` | Bot subprocess convention — JSONL stdin/stdout, argv `python bot.py <player_id>`, `AKAGI_PLAYER_ID` env, end-of-batch flush points. |
 | [`shinkuan/Akagi`](https://github.com/shinkuan/Akagi) (original Akagi, Python) | Architecture / behaviour parity | The original feature set we are reproducing: MITM proxy, mjai bridge, pluggable bots, recommendation HUD. |
+
+---
+
+## License
+
+Akagi v3 is licensed under the [Apache License 2.0](./LICENSE.txt).
+Copyright 2026 Shinkuan.
+
+Third-party attributions live in [`NOTICE`](./NOTICE) — read it alongside the
+license. Per Apache-2.0 §4(d), redistributions must include both files.
+
+Bundled / linked sources:
+
+- **mahjong-helper** (MIT) — `src/analysis/` is a Rust port of `util/`.
+- **riichienv-core** / RiichiEnv (Apache-2.0) — Cargo dependency.
+- **mahgen** (MIT) — DSL + `<mah-gen>` custom element.
+
+Reference-only (no code copied, listed in `NOTICE` for credit):
+
+- **MajsoulMax-rs** (GPL-3.0) — Majsoul WS wire format reference only.
+- **mjai spec** (Gimite) — bot wire contract.
+- **mjai.app** — bot subprocess convention.
+
+### Bots and AGPL
+
+Bots run in a separate OS process and talk to Akagi over JSONL stdin/stdout.
+This is an intentional license boundary: AGPL-licensed bots (e.g. Mortal,
+which links libriichi) stay inside their own process, so dropping one under
+`mjai_bot/<name>/` does **not** make Akagi a derived work of the bot. See
+`src/bot/README.md` for the contract.
