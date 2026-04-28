@@ -1109,16 +1109,6 @@ mah-gen {
   font-size: 11px;
   color: var(--amber);
 }
-.ev-tag {
-  font-family: var(--f-mono);
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  background: rgba(255,255,255,0.04);
-  color: var(--t-2);
-}
-.ev-tag.greedy { background: rgba(52,211,153,0.12); color: var(--emerald); }
-
 .notif-row {
   display: grid;
   grid-template-columns: auto 1fr auto;

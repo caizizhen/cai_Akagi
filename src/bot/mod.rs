@@ -18,4 +18,4 @@ pub use manager::BotManager;
 pub use registry::{BotEntry, BotRegistry};
 pub use runner::{BotRunner, SubprocessBot};
 pub use runtime::{PythonRuntime, RuntimeMode};
-pub use types::{BotMeta, BotResponse};
+pub use types::BotResponse;

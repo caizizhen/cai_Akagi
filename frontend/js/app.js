@@ -692,13 +692,11 @@ function renderResponses() {
     else if (r.type === "pon" || r.type === "chi" || r.type === "daiminkan") {
       meta = `from ${pack.seatsLatin[r.target]?.[0] ?? "?"}(${r.target})`;
     }
-    const greedy = r.meta?.is_greedy;
     row.innerHTML = `
       <span class="ev-time">${time}</span>
       <span class="ev-kind">${r.type}</span>
       <span class="ev-pai">${pai}</span>
       <span class="ev-meta">${meta}</span>
-      ${greedy === false ? "" : `<span class="ev-tag greedy">${pack.dict["tag.greedy"]}</span>`}
     `;
     list.appendChild(row);
   }
@@ -1051,11 +1049,11 @@ function loadMock() {
   ];
 
   state.responses = [
-    { type: "dahai", pai: "5m", tsumogiri: true,  meta: { is_greedy: true },  _time: "15:24:28" },
-    { type: "none",                                                            _time: "15:24:10" },
-    { type: "dahai", pai: "2p", tsumogiri: false, meta: { is_greedy: true },  _time: "15:24:01" },
-    { type: "pon",   pai: "6p", target: 1, consumed: ["6p","6p"], meta: { is_greedy: true }, _time: "15:23:52" },
-    { type: "chi",   pai: "7s", target: 3, consumed: ["6s","8s"], meta: { is_greedy: true }, _time: "15:23:45" },
+    { type: "dahai", pai: "5m", tsumogiri: true,  _time: "15:24:28" },
+    { type: "none",                               _time: "15:24:10" },
+    { type: "dahai", pai: "2p", tsumogiri: false, _time: "15:24:01" },
+    { type: "pon",   pai: "6p", target: 1, consumed: ["6p","6p"], _time: "15:23:52" },
+    { type: "chi",   pai: "7s", target: 3, consumed: ["6s","8s"], _time: "15:23:45" },
   ];
 }
 

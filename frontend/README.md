@@ -98,15 +98,14 @@ Tile strings: mjai format. `1m`-`9m`, `1p`-`9p`, `1s`-`9s`, `E S W N P F C` (win
 type BotResponse = {
   // The flattened mjai action object — same shape as MjaiEvent, plus optional meta.
   ...MjaiEvent;  // {type: 'dahai', actor, pai, tsumogiri, ...}
-  meta?: BotMeta;
-};
-
-type BotMeta = {
-  q_values?: number[];   // NN-bot preference scores per discard
-  mask_bits?: number;    // bitmask of legal discards
-  is_greedy?: boolean;
+  meta?: Record<string, unknown>;  // bot-defined; backend does not interpret
 };
 ```
+
+`meta` is a free-form JSON object emitted by the bot — confidence scores,
+reasoning text, q-values, anything the bot wants the HUD to render. Akagi
+forwards it verbatim. Different bots emit different keys; the frontend
+should treat unknown keys defensively.
 
 ### `bot-status`
 
