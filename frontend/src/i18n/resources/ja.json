@@ -1,0 +1,58 @@
+{
+  "nav": {
+    "overview": "概要",
+    "game": "対局",
+    "bots": "Bot",
+    "logs": "ログ",
+    "settings": "設定"
+  },
+  "tile": {
+    "header": "対局",
+    "player_0": "プレイヤー 1",
+    "player_1": "プレイヤー 2",
+    "player_2": "自分",
+    "player_3": "プレイヤー 4",
+    "self_hand": "手牌",
+    "recommendations": "推奨打牌 トップ3",
+    "risk_chart": "総合放銃リスク",
+    "opponents": "相手",
+    "events": "対局イベント",
+    "notifications": "ライブ通知",
+    "quick_controls": "クイック操作",
+    "bot_responses": "Bot 応答履歴",
+    "proxy_control": "プロキシ"
+  },
+  "common": {
+    "live": "ライブ",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "reset": "リセット",
+    "refresh": "再取得",
+    "loading": "読み込み中…",
+    "saving": "保存中…",
+    "clear": "クリア",
+    "add_tile": "タイル追加",
+    "reset_layout": "レイアウトをリセット",
+    "hidden_tiles": "非表示タイル",
+    "all_tiles_visible": "すべてのタイルが表示中です。",
+    "shanten": "向聴"
+  },
+  "settings": {
+    "title": "設定",
+    "general": "一般",
+    "language": "言語",
+    "proxy": "プロキシ",
+    "enabled": "有効",
+    "address": "アドレス",
+    "ca_dir": "CA ディレクトリ",
+    "logging": "ログ",
+    "directory": "ディレクトリ",
+    "app_log_level": "アプリログレベル",
+    "crate_log_level": "Crate ログレベル",
+    "bots": "Bot",
+    "bot_enabled": "Bot を有効化",
+    "auto_sync": "自動同期（初回起動時に uv sync）",
+    "active_bot": "アクティブな Bot",
+    "bot_directory": "Bot ディレクトリ"
+  }
+}

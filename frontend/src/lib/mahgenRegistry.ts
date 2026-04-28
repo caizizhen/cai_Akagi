@@ -1,0 +1,177 @@
+// Mahgen tile sizing — port of frontend/js/app.js.
+// See frontend/mahgen.md for the full background on why every "obvious"
+// CSS-only approach fails. The TL;DR: mahgen renders into an open shadow
+// root; setting host + inner <img> dimensions in pixels is the only path
+// that survives the WebKitGTK + circular-containing-block constraints.
+
+export type MahgenKind = 'river' | 'hand' | 'melds' | 'dora' | 'rec'
+
+type SizeCtx =
+  | { mode: 'river'; maxScale?: number; minScale?: number }
+  | { mode: 'fit'; min?: number; max?: number }
+  | { mode: 'fixed'; base: number }
+  | { mode: 'linear'; base: number; ref: number; min: number; max: number }
+
+const SIZE_CTX: Record<MahgenKind, SizeCtx> = {
+  river: { mode: 'river', maxScale: 0.65, minScale: 0.18 },
+  hand:  { mode: 'fit',   min: 44, max: 100 },
+  melds: { mode: 'linear', base: 34, ref: 230, min: 22, max: 56 },
+  dora:  { mode: 'fixed',  base: 30 },
+  rec:   { mode: 'linear', base: 38, ref: 340, min: 28, max: 56 },
+}
+
+const RIVER_FULL_ROW_W = 420
+
+type MahgenImg = HTMLImageElement & { _akagiOnLoad?: boolean }
+type MahgenEl = HTMLElement & { shadowRoot: ShadowRoot | null }
+
+type Entry = {
+  kind: MahgenKind
+  container: HTMLElement | null
+  retries: number
+}
+
+const registry = new Map<MahgenEl, Entry>()
+
+export function applyMahgenSize(el: MahgenEl): void {
+  const entry = registry.get(el)
+  if (!entry) return
+
+  if (!el.isConnected) {
+    entry.retries += 1
+    if (entry.retries > 6) {
+      registry.delete(el)
+      return
+    }
+    requestAnimationFrame(() => applyMahgenSize(el))
+    return
+  }
+  entry.retries = 0
+
+  const root = el.shadowRoot
+  if (!root) {
+    requestAnimationFrame(() => applyMahgenSize(el))
+    return
+  }
+
+  const img = root.querySelector('img') as MahgenImg | null
+  if (!img) {
+    requestAnimationFrame(() => applyMahgenSize(el))
+    return
+  }
+
+  if (!img._akagiOnLoad) {
+    img._akagiOnLoad = true
+    img.addEventListener('load', () => applyMahgenSize(el))
+  }
+
+  const seq = el.getAttribute('data-seq')
+  if (!seq) {
+    el.style.display = 'none'
+    return
+  }
+  el.style.display = ''
+
+  const cfg = SIZE_CTX[entry.kind]
+  const cw = entry.container?.clientWidth ?? ('ref' in cfg ? cfg.ref : 200)
+  const nw = img.naturalWidth
+  const nh = img.naturalHeight
+  const aspectKnown = nw > 0 && nh > 0
+
+  let w: number
+  let h: number
+
+  if (cfg.mode === 'river') {
+    if (aspectKnown) {
+      let scale = cw / RIVER_FULL_ROW_W
+      if (cfg.maxScale) scale = Math.min(scale, cfg.maxScale)
+      if (cfg.minScale) scale = Math.max(scale, cfg.minScale)
+      w = nw * scale
+      h = nh * scale
+    } else {
+      w = cw
+      h = (cw / RIVER_FULL_ROW_W) * 100
+    }
+  } else if (cfg.mode === 'fit') {
+    if (aspectKnown) {
+      w = cw
+      h = (cw * nh) / nw
+      if (cfg.max && h > cfg.max) {
+        h = cfg.max
+        w = (h * nw) / nh
+      }
+      if (cfg.min && h < cfg.min) {
+        h = cfg.min
+        w = (h * nw) / nh
+      }
+    } else {
+      w = cw
+      h = cfg.max ?? 80
+    }
+  } else if (cfg.mode === 'fixed') {
+    h = cfg.base
+    w = aspectKnown ? (h * nw) / nh : cfg.base
+  } else {
+    h = cfg.base * (cw / cfg.ref)
+    h = Math.max(cfg.min, Math.min(cfg.max, h))
+    w = aspectKnown ? (h * nw) / nh : cfg.base
+  }
+
+  el.style.width = `${w}px`
+  el.style.height = `${h}px`
+  el.style.flex = '0 0 auto'
+  img.style.width = `${w}px`
+  img.style.height = `${h}px`
+  img.style.objectFit = 'contain'
+  img.style.display = 'block'
+}
+
+const ro = typeof ResizeObserver !== 'undefined'
+  ? new ResizeObserver((entries) => {
+      const containers = new Set(entries.map((e) => e.target))
+      for (const [el, ent] of registry) {
+        if (ent.container && containers.has(ent.container)) applyMahgenSize(el)
+      }
+    })
+  : null
+
+const observedContainers = new WeakSet<Element>()
+
+export function registerMahgen(el: MahgenEl, kind: MahgenKind, container: HTMLElement | null): void {
+  registry.set(el, { kind, container, retries: 0 })
+  if (container && ro && !observedContainers.has(container)) {
+    ro.observe(container)
+    observedContainers.add(container)
+  }
+  applyMahgenSize(el)
+}
+
+export function unregisterMahgen(el: MahgenEl): void {
+  registry.delete(el)
+}
+
+let resizeRaf = 0
+function scheduleResize(): void {
+  if (resizeRaf) return
+  resizeRaf = requestAnimationFrame(() => {
+    resizeRaf = 0
+    for (const el of registry.keys()) applyMahgenSize(el)
+  })
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('resize', scheduleResize)
+}
+
+export function setMahgenSeq(el: MahgenEl, seq: string): void {
+  const next = seq ?? ''
+  if ((el.getAttribute('data-seq') ?? '') === next) return
+  el.style.opacity = '0'
+  requestAnimationFrame(() => {
+    el.setAttribute('data-seq', next)
+    requestAnimationFrame(() => {
+      el.style.opacity = '1'
+      applyMahgenSize(el)
+    })
+  })
+}

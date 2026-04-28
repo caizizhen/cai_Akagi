@@ -1,0 +1,58 @@
+{
+  "nav": {
+    "overview": "Overview",
+    "game": "Game",
+    "bots": "Bots",
+    "logs": "Logs",
+    "settings": "Settings"
+  },
+  "tile": {
+    "header": "Game",
+    "player_0": "Player 1",
+    "player_1": "Player 2",
+    "player_2": "Self",
+    "player_3": "Player 4",
+    "self_hand": "Self Hand",
+    "recommendations": "Top 3 Discards",
+    "risk_chart": "Mixed Deal-in Risk",
+    "opponents": "Opponents",
+    "events": "Game Events",
+    "notifications": "Notifications",
+    "quick_controls": "Quick Controls",
+    "bot_responses": "Bot Responses",
+    "proxy_control": "Proxy"
+  },
+  "common": {
+    "live": "LIVE",
+    "save": "Save",
+    "cancel": "Cancel",
+    "reset": "Reset",
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "saving": "Saving…",
+    "clear": "Clear",
+    "add_tile": "Add tile",
+    "reset_layout": "Reset Layout",
+    "hidden_tiles": "Hidden tiles",
+    "all_tiles_visible": "All tiles are visible.",
+    "shanten": "Shanten"
+  },
+  "settings": {
+    "title": "Settings",
+    "general": "General",
+    "language": "Language",
+    "proxy": "Proxy",
+    "enabled": "Enabled",
+    "address": "Address",
+    "ca_dir": "CA directory",
+    "logging": "Logging",
+    "directory": "Directory",
+    "app_log_level": "App log level",
+    "crate_log_level": "Crate log level",
+    "bots": "Bots",
+    "bot_enabled": "Bot enabled",
+    "auto_sync": "Auto-sync (uv sync on first spawn)",
+    "active_bot": "Active bot",
+    "bot_directory": "Bot directory"
+  }
+}

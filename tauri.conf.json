@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "identifier": "com.akagi.app",
   "build": {
-    "frontendDist": "./frontend"
+    "frontendDist": "./frontend/dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "cd frontend && npm run dev",
+    "beforeBuildCommand": "cd frontend && npm ci && npm run build"
   },
   "app": {
     "withGlobalTauri": true,
@@ -15,16 +18,6 @@
         "height": 980,
         "minWidth": 1280,
         "minHeight": 820
-      },
-      {
-        "label": "debug",
-        "title": "Akagi Debug",
-        "url": "debug.html",
-        "width": 1200,
-        "height": 760,
-        "minWidth": 720,
-        "minHeight": 480,
-        "visible": true
       }
     ]
   }

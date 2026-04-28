@@ -30,3 +30,8 @@ gen/
 
 # util
 mjai_bot/mortal
+
+# Locally-built bot release artifacts
+mortal.zip
+*.bot.zip
+tests/mortal_zip_layout.rs

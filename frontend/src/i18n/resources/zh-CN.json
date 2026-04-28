@@ -1,0 +1,58 @@
+{
+  "nav": {
+    "overview": "总览",
+    "game": "对局",
+    "bots": "机器人",
+    "logs": "日志",
+    "settings": "设置"
+  },
+  "tile": {
+    "header": "对局",
+    "player_0": "玩家 1",
+    "player_1": "玩家 2",
+    "player_2": "自家",
+    "player_3": "玩家 4",
+    "self_hand": "自家手牌",
+    "recommendations": "前三推荐切牌",
+    "risk_chart": "综合放铳风险",
+    "opponents": "对手",
+    "events": "对局事件",
+    "notifications": "实时通知",
+    "quick_controls": "快速控制",
+    "bot_responses": "Bot 响应记录",
+    "proxy_control": "代理"
+  },
+  "common": {
+    "live": "实时",
+    "save": "保存",
+    "cancel": "取消",
+    "reset": "重置",
+    "refresh": "刷新",
+    "loading": "加载中…",
+    "saving": "保存中…",
+    "clear": "清除",
+    "add_tile": "添加区块",
+    "reset_layout": "重置布局",
+    "hidden_tiles": "已隐藏区块",
+    "all_tiles_visible": "所有区块已显示。",
+    "shanten": "向听"
+  },
+  "settings": {
+    "title": "设置",
+    "general": "通用",
+    "language": "语言",
+    "proxy": "代理",
+    "enabled": "启用",
+    "address": "地址",
+    "ca_dir": "CA 目录",
+    "logging": "日志",
+    "directory": "目录",
+    "app_log_level": "应用日志级别",
+    "crate_log_level": "Crate 日志级别",
+    "bots": "机器人",
+    "bot_enabled": "启用机器人",
+    "auto_sync": "自动同步（首次启动时 uv sync）",
+    "active_bot": "启用的 Bot",
+    "bot_directory": "Bot 目录"
+  }
+}

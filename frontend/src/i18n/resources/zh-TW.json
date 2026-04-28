@@ -1,0 +1,58 @@
+{
+  "nav": {
+    "overview": "總覽",
+    "game": "對局",
+    "bots": "機器人",
+    "logs": "日誌",
+    "settings": "設定"
+  },
+  "tile": {
+    "header": "對局",
+    "player_0": "玩家 1",
+    "player_1": "玩家 2",
+    "player_2": "自家",
+    "player_3": "玩家 4",
+    "self_hand": "自家手牌",
+    "recommendations": "前三建議切牌",
+    "risk_chart": "綜合放銃風險",
+    "opponents": "對手",
+    "events": "對局事件",
+    "notifications": "即時通知",
+    "quick_controls": "快速控制",
+    "bot_responses": "Bot 反應紀錄",
+    "proxy_control": "代理"
+  },
+  "common": {
+    "live": "即時",
+    "save": "儲存",
+    "cancel": "取消",
+    "reset": "重設",
+    "refresh": "重新整理",
+    "loading": "載入中…",
+    "saving": "儲存中…",
+    "clear": "清除",
+    "add_tile": "新增區塊",
+    "reset_layout": "重設版面",
+    "hidden_tiles": "已隱藏區塊",
+    "all_tiles_visible": "所有區塊已顯示。",
+    "shanten": "向聽"
+  },
+  "settings": {
+    "title": "設定",
+    "general": "一般",
+    "language": "語言",
+    "proxy": "代理",
+    "enabled": "啟用",
+    "address": "位址",
+    "ca_dir": "CA 目錄",
+    "logging": "日誌",
+    "directory": "目錄",
+    "app_log_level": "應用日誌等級",
+    "crate_log_level": "Crate 日誌等級",
+    "bots": "機器人",
+    "bot_enabled": "啟用機器人",
+    "auto_sync": "自動同步（首次啟動時 uv sync）",
+    "active_bot": "啟用的 Bot",
+    "bot_directory": "Bot 目錄"
+  }
+}
