@@ -16,7 +16,8 @@ use crate::ipc::state::AppState;
 use crate::proxy::start_proxy;
 use crate::schema::ProxyStatus;
 use anyhow::Result;
-use tokio::sync::oneshot;
+use std::sync::Arc;
+use tokio::sync::{Notify, oneshot};
 use tracing::{error, info};
 
 /// Spawn the proxy task and wire it into `state.proxy_control`. Returns
@@ -30,10 +31,14 @@ pub async fn spawn_proxy_supervisor(state: AppState) -> Result<()> {
     let addr = proxy_cfg.addr.clone();
 
     let (stop_tx, stop_rx) = oneshot::channel::<()>();
+    // Fresh Notify per spawn so old flows from a previous run can't be
+    // re-kicked by a future stop. The handler holds a clone via start_proxy.
+    let force_close: Arc<Notify> = Arc::new(Notify::new());
 
     {
         let mut ctl = state.proxy_control.lock().await;
         ctl.stop = Some(stop_tx);
+        ctl.force_close = force_close.clone();
         ctl.status = ProxyStatus::Running { addr: addr.clone() };
     }
     let _ = state
@@ -49,7 +54,8 @@ pub async fn spawn_proxy_supervisor(state: AppState) -> Result<()> {
         let shutdown = async move {
             let _ = stop_rx.await;
         };
-        let result = start_proxy(proxy_cfg, platform, session, mjai, shutdown).await;
+        let result =
+            start_proxy(proxy_cfg, platform, session, mjai, force_close, shutdown).await;
 
         let next = match &result {
             Ok(()) => {

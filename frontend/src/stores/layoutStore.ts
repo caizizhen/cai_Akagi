@@ -11,8 +11,8 @@ import {
 // Bump the version segment whenever DEFAULT_LAYOUTS changes shape so old
 // saved data doesn't override the new defaults. Old keys are orphaned in
 // localStorage but harmless.
-const LAYOUTS_KEY = 'akagi.v3.layouts'
-const HIDDEN_KEY = 'akagi.v3.hidden'
+const LAYOUTS_KEY = 'akagi.v4.layouts'
+const HIDDEN_KEY = 'akagi.v4.hidden'
 
 export type Layouts = Record<Breakpoint, LayoutItem[]>
 export type HiddenSet = Record<Breakpoint, TileId[]>

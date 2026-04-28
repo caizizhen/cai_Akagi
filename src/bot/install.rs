@@ -79,6 +79,8 @@ pub async fn install_from_github_release(
     dest_root: &Path,
     notify: &NotifyBus,
 ) -> Result<BotEntry> {
+    let mut spec = spec;
+    spec.repo = normalize_repo(&spec.repo);
     validate_repo(&spec.repo)?;
     let target_name = spec.target_name();
     validate_target_name(&target_name)?;
@@ -219,6 +221,38 @@ fn validate_repo(repo: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Reduce a user-supplied repo identifier to canonical `owner/name`.
+/// Accepts: bare `owner/name`, `https?://[www.]github.com/owner/name`,
+/// optional `.git` suffix, trailing slash, query string, hash fragment.
+/// The result still goes through `validate_repo`; this function only
+/// strips the parts that are unambiguously safe to drop.
+pub fn normalize_repo(input: &str) -> String {
+    let mut s = input.trim();
+    for prefix in ["https://", "http://"] {
+        if let Some(rest) = s.strip_prefix(prefix) {
+            s = rest;
+            break;
+        }
+    }
+    if let Some(rest) = s.strip_prefix("www.") {
+        s = rest;
+    }
+    if let Some(rest) = s.strip_prefix("github.com/") {
+        s = rest;
+    }
+    if let Some(idx) = s.find(['?', '#']) {
+        s = &s[..idx];
+    }
+    let s = s.trim_end_matches('/');
+    let s = s.strip_suffix(".git").unwrap_or(s);
+    let parts: Vec<&str> = s.split('/').filter(|p| !p.is_empty()).collect();
+    if parts.len() >= 2 {
+        format!("{}/{}", parts[0], parts[1])
+    } else {
+        s.to_owned()
+    }
 }
 
 fn validate_target_name(name: &str) -> Result<()> {

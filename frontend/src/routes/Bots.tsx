@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Settings as SettingsIcon, RefreshCw, CheckCircle2 } from 'lucide-react'
+import { Plus, Settings as SettingsIcon, RefreshCw, CheckCircle2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -46,6 +46,7 @@ export function Bots() {
   const setConfig = useConfigStore((s) => s.setConfig)
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
 
   const refresh = async () => {
     setLoading(true)
@@ -129,16 +130,28 @@ export function Bots() {
                 />
               </TableCell>
               <TableCell className="text-right">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setEditing(bot.name)}
-                  disabled={!bot.manifest}
-                  className="gap-1.5"
-                >
-                  <SettingsIcon className="h-4 w-4" />
-                  Configure
-                </Button>
+                <div className="flex items-center justify-end gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setEditing(bot.name)}
+                    disabled={!bot.manifest}
+                    className="gap-1.5"
+                  >
+                    <SettingsIcon className="h-4 w-4" />
+                    Configure
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setDeleting(bot.name)}
+                    disabled={config?.bot.active === bot.name}
+                    title={config?.bot.active === bot.name ? 'Switch active bot first' : 'Delete'}
+                    className="gap-1.5 text-red-400 hover:text-red-400"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))}
@@ -152,7 +165,62 @@ export function Bots() {
           onOpenChange={(open) => !open && setEditing(null)}
         />
       )}
+
+      {deleting && (
+        <DeleteBotDialog
+          name={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={refresh}
+        />
+      )}
     </div>
+  )
+}
+
+function DeleteBotDialog({
+  name, onClose, onDeleted,
+}: {
+  name: string
+  onClose: () => void
+  onDeleted: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const submit = async () => {
+    setBusy(true)
+    setErr(null)
+    try {
+      await invoke('delete_bot', { name })
+      onClose()
+      onDeleted()
+    } catch (e) {
+      setErr(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete bot {name}?</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          This permanently removes <span className="font-mono">{name}</span> from
+          the bots directory, including its installed files, virtualenv, and
+          settings. This action cannot be undone.
+        </p>
+        {err && <span className="text-sm text-red-400">{err}</span>}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="destructive" onClick={submit} disabled={busy}>
+            {busy ? 'Deleting…' : 'Delete'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -199,8 +267,16 @@ function InstallFromGithubDialog({ onInstalled }: { onInstalled: () => void }) {
         </DialogHeader>
         <div className="grid gap-4 py-2">
           <div className="grid gap-1.5">
-            <Label>Repo (owner/name)</Label>
-            <Input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="user/mortal-bot" />
+            <Label>Repo</Label>
+            <Input
+              value={repo}
+              onChange={(e) => setRepo(e.target.value)}
+              placeholder="user/mortal-bot"
+            />
+            <span className="text-xs text-muted-foreground">
+              Accepts <span className="font-mono">owner/name</span> or a full
+              GitHub URL (<span className="font-mono">https://github.com/owner/name</span>).
+            </span>
           </div>
           <div className="grid gap-1.5">
             <Label>Asset glob (optional)</Label>

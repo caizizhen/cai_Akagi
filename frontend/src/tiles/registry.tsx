@@ -6,7 +6,6 @@ import { RiskChartTile } from './RiskChartTile'
 import { OpponentsTile } from './OpponentsTile'
 import { EventsTile } from './EventsTile'
 import { NotificationsTile } from './NotificationsTile'
-import { QuickControlsTile } from './QuickControlsTile'
 import { BotResponsesTile } from './BotResponsesTile'
 import { ProxyControlTile } from './ProxyControlTile'
 import type { Breakpoint, TileId } from './defaults'
@@ -24,7 +23,6 @@ export function renderTile(id: TileId, bp: Breakpoint) {
     case 'opponents':       return <OpponentsTile bp={bp} />
     case 'events':          return <EventsTile bp={bp} />
     case 'notifications':   return <NotificationsTile bp={bp} />
-    case 'quick-controls':  return <QuickControlsTile bp={bp} />
     case 'bot-responses':   return <BotResponsesTile bp={bp} />
     case 'proxy-control':   return <ProxyControlTile bp={bp} />
   }

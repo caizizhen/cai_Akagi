@@ -18,7 +18,8 @@ use std::{
         atomic::{AtomicU64, Ordering},
     },
 };
-use tracing::{debug, error, warn};
+use tokio::sync::Notify;
+use tracing::{debug, error, info, warn};
 
 const TAG_CLIENT_TO_SERVER: u8 = 0;
 const TAG_SERVER_TO_CLIENT: u8 = 1;
@@ -40,6 +41,11 @@ pub struct ProxyHandler {
     /// Optional fan-out for parsed mjai events. `None` keeps the proxy
     /// usable in tests and in standalone "log only" mode.
     mjai_tx: Option<MjaiBus>,
+    /// Triggered by `stop_proxy` to kick all in-flight WS flows. Without
+    /// this, hudsucker's `with_graceful_shutdown` only blocks new
+    /// connections; existing ones would drain naturally and the game
+    /// client would never see a disconnect.
+    force_close: Arc<Notify>,
 }
 
 impl ProxyHandler {
@@ -47,6 +53,7 @@ impl ProxyHandler {
         session: Arc<Session>,
         platform: Platform,
         mjai_tx: Option<MjaiBus>,
+        force_close: Arc<Notify>,
     ) -> anyhow::Result<Self> {
         let binary = session.binary_logger("proxy")?;
         Ok(Self {
@@ -56,6 +63,7 @@ impl ProxyHandler {
             bridges: Arc::new(StdMutex::new(HashMap::new())),
             next_flow_id: Arc::new(AtomicU64::new(1)),
             mjai_tx,
+            force_close,
         })
     }
 
@@ -125,35 +133,47 @@ impl WebSocketHandler for ProxyHandler {
         let client = client_addr(&ctx);
         let server_uri = server_uri(&ctx);
         let bridge = self.acquire_bridge(client, &server_uri);
+        let force_close = self.force_close.clone();
 
-        while let Some(message) = stream.next().await {
-            match message {
-                Ok(message) => {
-                    let Some(out) = self.handle_message(&ctx, message, &bridge).await else {
-                        continue;
-                    };
-                    match sink.send(out).await {
-                        Ok(()) => (),
-                        // Peer already gone — normal at end of game / lobby.
+        loop {
+            tokio::select! {
+                biased;
+                _ = force_close.notified() => {
+                    info!("force-closing WS flow for {client}");
+                    let _ = sink.send(Message::Close(None)).await;
+                    break;
+                }
+                next = stream.next() => {
+                    let Some(message) = next else { break };
+                    match message {
+                        Ok(message) => {
+                            let Some(out) = self.handle_message(&ctx, message, &bridge).await else {
+                                continue;
+                            };
+                            match sink.send(out).await {
+                                Ok(()) => (),
+                                // Peer already gone — normal at end of game / lobby.
+                                Err(tungstenite::Error::ConnectionClosed)
+                                | Err(tungstenite::Error::AlreadyClosed) => break,
+                                Err(e) => {
+                                    error!("WebSocket send error: {e}");
+                                    break;
+                                }
+                            }
+                        }
                         Err(tungstenite::Error::ConnectionClosed)
                         | Err(tungstenite::Error::AlreadyClosed) => break,
                         Err(e) => {
-                            error!("WebSocket send error: {e}");
+                            error!("WebSocket recv error: {e}");
+                            match sink.send(Message::Close(None)).await {
+                                Ok(())
+                                | Err(tungstenite::Error::ConnectionClosed)
+                                | Err(tungstenite::Error::AlreadyClosed) => (),
+                                Err(e) => error!("WebSocket close error: {e}"),
+                            }
                             break;
                         }
                     }
-                }
-                Err(tungstenite::Error::ConnectionClosed)
-                | Err(tungstenite::Error::AlreadyClosed) => break,
-                Err(e) => {
-                    error!("WebSocket recv error: {e}");
-                    match sink.send(Message::Close(None)).await {
-                        Ok(())
-                        | Err(tungstenite::Error::ConnectionClosed)
-                        | Err(tungstenite::Error::AlreadyClosed) => (),
-                        Err(e) => error!("WebSocket close error: {e}"),
-                    }
-                    break;
                 }
             }
         }

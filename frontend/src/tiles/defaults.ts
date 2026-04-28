@@ -12,7 +12,6 @@ export type TileId =
   | 'opponents'
   | 'events'
   | 'notifications'
-  | 'quick-controls'
   | 'bot-responses'
   | 'proxy-control'
 
@@ -34,13 +33,11 @@ export const ALL_TILES: TileId[] = [
   'opponents',
   'events',
   'notifications',
-  'quick-controls',
   'bot-responses',
   'proxy-control',
 ]
 
-// proxy-control is hidden by default — overlaps quick-controls.
-export const DEFAULT_HIDDEN: TileId[] = ['proxy-control']
+export const DEFAULT_HIDDEN: TileId[] = []
 
 // Default layout for the lg (12-col) breakpoint. RGL Responsive copies
 // layouts from lg → md → sm → xs when missing entries; for now we provide
@@ -57,9 +54,8 @@ const LG_LAYOUT: LayoutItem[] = [
   { i: 'self-hand',       x: 0, y: 16, w: 12, h: 4, minW: 6, minH: 2, maxH: 6 },
   { i: 'events',          x: 0, y: 19, w: 3,  h: 5, minW: 2, minH: 3 },
   { i: 'notifications',   x: 3, y: 19, w: 3,  h: 5, minW: 2, minH: 3 },
-  { i: 'quick-controls',  x: 6, y: 19, w: 3,  h: 5, minW: 2, minH: 3, maxH: 6 },
+  { i: 'proxy-control',   x: 6, y: 19, w: 3,  h: 5, minW: 2, minH: 2, maxH: 6 },
   { i: 'bot-responses',   x: 9, y: 19, w: 3,  h: 5, minW: 2, minH: 3 },
-  { i: 'proxy-control',   x: 0, y: 24, w: 3,  h: 3, minW: 2, minH: 2, maxH: 6 },
 ]
 
 const MD_LAYOUT: LayoutItem[] = [
@@ -74,9 +70,8 @@ const MD_LAYOUT: LayoutItem[] = [
   { i: 'self-hand',       x: 0, y: 22, w: 10, h: 4, minW: 5, minH: 2, maxH: 6 },
   { i: 'events',          x: 0, y: 25, w: 5,  h: 5, minW: 2, minH: 3 },
   { i: 'notifications',   x: 5, y: 25, w: 5,  h: 5, minW: 2, minH: 3 },
-  { i: 'quick-controls',  x: 0, y: 30, w: 5,  h: 5, minW: 2, minH: 3, maxH: 6 },
+  { i: 'proxy-control',   x: 0, y: 30, w: 5,  h: 5, minW: 2, minH: 2, maxH: 6 },
   { i: 'bot-responses',   x: 5, y: 30, w: 5,  h: 5, minW: 2, minH: 3 },
-  { i: 'proxy-control',   x: 0, y: 35, w: 4,  h: 3, minW: 2, minH: 2, maxH: 6 },
 ]
 
 const SM_LAYOUT: LayoutItem[] = [
@@ -91,9 +86,8 @@ const SM_LAYOUT: LayoutItem[] = [
   { i: 'self-hand',       x: 0, y: 30, w: 6, h: 4, minW: 4, minH: 2, maxH: 6 },
   { i: 'events',          x: 0, y: 33, w: 3, h: 5, minW: 2, minH: 3 },
   { i: 'notifications',   x: 3, y: 33, w: 3, h: 5, minW: 2, minH: 3 },
-  { i: 'quick-controls',  x: 0, y: 38, w: 3, h: 5, minW: 2, minH: 3, maxH: 6 },
+  { i: 'proxy-control',   x: 0, y: 38, w: 3, h: 5, minW: 2, minH: 2, maxH: 6 },
   { i: 'bot-responses',   x: 3, y: 38, w: 3, h: 5, minW: 2, minH: 3 },
-  { i: 'proxy-control',   x: 0, y: 43, w: 3, h: 3, minW: 2, minH: 2, maxH: 6 },
 ]
 
 const XS_LAYOUT: LayoutItem[] = ALL_TILES.map((id, i) => ({
@@ -125,7 +119,6 @@ export const TILE_TITLES: Record<TileId, string> = {
   'opponents':       'Opponents',
   'events':          'Game Events',
   'notifications':   'Notifications',
-  'quick-controls':  'Quick Controls',
   'bot-responses':   'Bot Responses',
   'proxy-control':   'Proxy',
 }

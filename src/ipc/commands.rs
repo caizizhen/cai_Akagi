@@ -215,10 +215,15 @@ pub async fn start_proxy(state: State<'_, AppState>) -> CmdResult<()> {
 
 #[tauri::command]
 pub async fn stop_proxy(state: State<'_, AppState>) -> CmdResult<()> {
-    let stop = {
+    let (stop, force_close) = {
         let mut ctl = state.proxy_control.lock().await;
-        ctl.stop.take()
+        (ctl.stop.take(), ctl.force_close.clone())
     };
+    // Kick in-flight WS flows first so the game client actually
+    // disconnects. Without this, hudsucker's graceful shutdown only
+    // blocks new connections; existing ones drain naturally and the
+    // user sees comm "still working" even after stop.
+    force_close.notify_waiters();
     match stop {
         Some(tx) => {
             // Receiver dropped means the task already exited — that's fine,
@@ -279,6 +284,44 @@ pub async fn get_mahgen_view(state: State<'_, AppState>) -> CmdResult<Option<Mah
         .map(|s| MahgenView::from_snapshot(&s)))
 }
 
+/// Remove a bot's directory under `bot.dir/<name>/`. Refuses to delete
+/// the currently-active bot — user must `set_active_bot` to a different
+/// one first. Refuses target paths that escape `bot.dir` (defense in
+/// depth even though `name` came from the bot list, not raw user input).
+#[tauri::command]
+pub async fn delete_bot(name: String, state: State<'_, AppState>) -> CmdResult<()> {
+    let (active, dir) = {
+        let cfg = state.config.read().await;
+        (cfg.bot.active.clone(), cfg.bot.dir.clone())
+    };
+    if active == name {
+        return Err(format!(
+            "{name:?} is the active bot — switch to a different bot first"
+        ));
+    }
+    if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
+        return Err(format!("invalid bot name {name:?}"));
+    }
+    let resolved_root = resolve_dir(Path::new(&dir));
+    let target = resolved_root.join(&name);
+    if !target.is_dir() {
+        return Err(format!("bot {name:?} not found at {}", target.display()));
+    }
+    let canon_root = std::fs::canonicalize(&resolved_root)
+        .map_err(|e| format!("canonicalize {}: {e}", resolved_root.display()))?;
+    let canon_target = std::fs::canonicalize(&target)
+        .map_err(|e| format!("canonicalize {}: {e}", target.display()))?;
+    if !canon_target.starts_with(&canon_root) {
+        return Err(format!("bot {name:?} resolves outside the bot directory"));
+    }
+    std::fs::remove_dir_all(&canon_target)
+        .map_err(|e| format!("remove {}: {e}", canon_target.display()))?;
+    let _ = state
+        .notify_bus
+        .send(Notification::success(format!("Deleted bot {name}")));
+    Ok(())
+}
+
 fn persist_config(config: &AppConfig, path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
@@ -304,6 +347,7 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::update_bot_settings,
             $crate::ipc::commands::install_bot_from_github,
             $crate::ipc::commands::update_bot_from_manifest,
+            $crate::ipc::commands::delete_bot,
             $crate::ipc::commands::start_proxy,
             $crate::ipc::commands::stop_proxy,
             $crate::ipc::commands::get_status,

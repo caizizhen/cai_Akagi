@@ -24,16 +24,22 @@ use crate::logger::Session;
 use crate::schema::{BotStatus, ProxyStatus};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock, oneshot};
+use tokio::sync::{Mutex, Notify, RwLock, oneshot};
 
 /// Per-running-proxy control handle.
 ///
 /// `stop` is `Some` while the proxy task is alive; sending `()` triggers
 /// `with_graceful_shutdown` and the task exits. After exit the
 /// supervisor sets `stop = None` and updates `status`.
+///
+/// `force_close` is shared with the active `ProxyHandler`; calling
+/// `notify_waiters()` kicks every in-flight WebSocket flow so the game
+/// client actually disconnects (graceful shutdown alone only blocks new
+/// connections — existing flows would otherwise drain naturally).
 pub struct ProxyControl {
     pub status: ProxyStatus,
     pub stop: Option<oneshot::Sender<()>>,
+    pub force_close: Arc<Notify>,
 }
 
 impl Default for ProxyControl {
@@ -41,6 +47,7 @@ impl Default for ProxyControl {
         Self {
             status: ProxyStatus::Stopped,
             stop: None,
+            force_close: Arc::new(Notify::new()),
         }
     }
 }

@@ -12,6 +12,7 @@ use crate::{
 use anyhow::{Context, Result};
 use hudsucker::{Proxy, rustls};
 use std::{future::Future, net::SocketAddr, str::FromStr, sync::Arc};
+use tokio::sync::Notify;
 use tracing::info;
 
 pub async fn start_proxy<F>(
@@ -19,6 +20,7 @@ pub async fn start_proxy<F>(
     platform: Platform,
     session: Arc<Session>,
     mjai_tx: Option<MjaiBus>,
+    force_close: Arc<Notify>,
     shutdown: F,
 ) -> Result<()>
 where
@@ -31,7 +33,7 @@ where
     let addr = SocketAddr::from_str(&config.addr)
         .with_context(|| format!("Invalid proxy addr: {}", config.addr))?;
 
-    let handler = ProxyHandler::new(session.clone(), platform, mjai_tx)?;
+    let handler = ProxyHandler::new(session.clone(), platform, mjai_tx, force_close)?;
 
     info!("Starting proxy on {addr}");
 
