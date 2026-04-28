@@ -52,7 +52,7 @@ export function Settings() {
   }
 
   return (
-    <div className="p-6 max-w-3xl flex flex-col gap-6">
+    <div className="p-6 w-full flex flex-col gap-6">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Settings</h1>
         <div className="flex gap-2">

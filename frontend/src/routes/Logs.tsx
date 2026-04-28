@@ -31,7 +31,7 @@ export function Logs() {
   }
 
   return (
-    <div className="p-6 flex flex-col gap-4 max-w-3xl">
+    <div className="p-6 flex flex-col gap-4 w-full">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Logs</h1>
         <div className="flex gap-2">

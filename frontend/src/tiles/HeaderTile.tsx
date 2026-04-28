@@ -27,15 +27,22 @@ export function HeaderTile({ bp }: { bp: Breakpoint }) {
         </div>
       )}
 
-      <Stat label="Honba"   value={game?.honba ?? 0} />
-      <Stat label="Kyotaku" value={game?.kyotaku ?? 0} />
-      <Stat label="Turn"    value={game?.turn_count ?? 0} />
       {game && (
-        <Stat
-          label="Phase"
-          value={game.phase}
-          mono
-        />
+        <div className="flex items-center gap-3 rounded-md border border-border px-2 py-1">
+          <div className="flex items-center gap-1">
+            <img src="/1000_mini.svg" alt="kyotaku" className="h-5" />
+            <span className="font-mono text-sm font-medium">×{game.kyotaku}</span>
+          </div>
+          <span className="text-muted-foreground">|</span>
+          <div className="flex items-center gap-1">
+            <img src="/100_mini.svg" alt="honba" className="h-5" />
+            <span className="font-mono text-sm font-medium">×{game.honba}</span>
+          </div>
+        </div>
+      )}
+
+      {game && (
+        <Stat label="Phase" value={game.phase} mono />
       )}
     </TileFrame>
   )
