@@ -37,20 +37,25 @@ import {
 import { invoke } from '@/lib/tauri'
 import { useBotStore } from '@/stores/botStore'
 import { useConfigStore } from '@/stores/configStore'
-import type { BotInfo, BotSettings, FieldSpec } from '@/types'
+import type { AppConfig, BotInfo, BotSettings, FieldSpec } from '@/types'
 
 export function Bots() {
   const list = useBotStore((s) => s.list)
   const setList = useBotStore((s) => s.setList)
   const config = useConfigStore((s) => s.config)
+  const setConfig = useConfigStore((s) => s.setConfig)
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
 
   const refresh = async () => {
     setLoading(true)
     try {
-      const bots = await invoke<BotInfo[]>('list_bots')
+      const [bots, cfg] = await Promise.all([
+        invoke<BotInfo[]>('list_bots'),
+        invoke<AppConfig>('get_config'),
+      ])
       setList(bots)
+      setConfig(cfg)
     } catch {
       /* notify event will surface */
     } finally {
@@ -64,11 +69,16 @@ export function Bots() {
   }, [])
 
   const setActive = async (name: string) => {
+    if (config?.bot.active === name) return
+    // Optimistic: flip immediately so the Switch reflects the click; refresh
+    // backfills from backend in case the call fails or the value differs.
+    if (config) setConfig({ ...config, bot: { ...config.bot, active: name } })
     try {
       await invoke('set_active_bot', { name })
-      await refresh()
     } catch {
       /* noop */
+    } finally {
+      void refresh()
     }
   }
 

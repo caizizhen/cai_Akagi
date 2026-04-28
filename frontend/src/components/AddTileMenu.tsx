@@ -9,10 +9,13 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { useLayoutStore } from '@/stores/layoutStore'
-import { TILE_TITLES, type Breakpoint } from '@/tiles/defaults'
+import { TILE_TITLES, type Breakpoint, type TileId } from '@/tiles/defaults'
+
+// Stable empty fallback — see OpponentsTile note on Zustand selector identity.
+const EMPTY_HIDDEN: readonly TileId[] = []
 
 export function AddTileMenu({ bp }: { bp: Breakpoint }) {
-  const hidden = useLayoutStore((s) => s.hidden[bp] ?? [])
+  const hidden = useLayoutStore((s) => s.hidden[bp] ?? EMPTY_HIDDEN)
   const show = useLayoutStore((s) => s.show)
 
   return (

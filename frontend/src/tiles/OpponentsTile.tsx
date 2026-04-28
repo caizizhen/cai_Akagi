@@ -10,10 +10,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import type { OpponentRisk } from '@/types'
 import type { Breakpoint } from '@/tiles/defaults'
 
+// Stable empty fallback — selector must not allocate a new array per render.
+// Zustand v5 uses Object.is on the selector output and would loop forever.
+const NO_OPPONENTS: readonly OpponentRisk[] = []
+
 export function OpponentsTile({ bp }: { bp: Breakpoint }) {
-  const opponents = useAnalysisStore((s) => s.result?.opponents ?? [])
+  const opponents = useAnalysisStore((s) => s.result?.opponents ?? NO_OPPONENTS)
   const ourSeat = useGameStore((s) => s.game?.our_seat ?? null)
 
   return (

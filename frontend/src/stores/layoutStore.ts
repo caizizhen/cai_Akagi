@@ -8,8 +8,11 @@ import {
   type TileId,
 } from '@/tiles/defaults'
 
-const LAYOUTS_KEY = 'akagi.v2.layouts'
-const HIDDEN_KEY = 'akagi.v2.hidden'
+// Bump the version segment whenever DEFAULT_LAYOUTS changes shape so old
+// saved data doesn't override the new defaults. Old keys are orphaned in
+// localStorage but harmless.
+const LAYOUTS_KEY = 'akagi.v3.layouts'
+const HIDDEN_KEY = 'akagi.v3.hidden'
 
 export type Layouts = Record<Breakpoint, LayoutItem[]>
 export type HiddenSet = Record<Breakpoint, TileId[]>
@@ -27,30 +30,51 @@ function deepClone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v))
 }
 
+// Ensure all four breakpoints exist as arrays. Stale / partial localStorage
+// data (older format, missing keys, non-array values) would otherwise crash
+// downstream `.filter` calls in GameDashboard.
+function normaliseLayouts(parsed: unknown): Layouts {
+  const fresh = deepClone(DEFAULT_LAYOUTS)
+  if (!parsed || typeof parsed !== 'object') return fresh
+  const obj = parsed as Record<string, unknown>
+  for (const bp of ['lg', 'md', 'sm', 'xs'] as const) {
+    if (Array.isArray(obj[bp])) fresh[bp] = obj[bp] as Layouts[Breakpoint]
+  }
+  return fresh
+}
+
+function normaliseHidden(parsed: unknown): HiddenSet {
+  const fallback: HiddenSet = {
+    lg: [...DEFAULT_HIDDEN], md: [...DEFAULT_HIDDEN],
+    sm: [...DEFAULT_HIDDEN], xs: [...DEFAULT_HIDDEN],
+  }
+  if (!parsed || typeof parsed !== 'object') return fallback
+  const obj = parsed as Record<string, unknown>
+  for (const bp of ['lg', 'md', 'sm', 'xs'] as const) {
+    if (Array.isArray(obj[bp])) fallback[bp] = obj[bp] as TileId[]
+  }
+  return fallback
+}
+
 function loadLayouts(): Layouts {
   if (typeof localStorage === 'undefined') return deepClone(DEFAULT_LAYOUTS)
   try {
     const raw = localStorage.getItem(LAYOUTS_KEY)
     if (!raw) return deepClone(DEFAULT_LAYOUTS)
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return deepClone(DEFAULT_LAYOUTS)
-    return parsed as Layouts
+    return normaliseLayouts(JSON.parse(raw))
   } catch {
     return deepClone(DEFAULT_LAYOUTS)
   }
 }
 
 function loadHidden(): HiddenSet {
-  const fallback: HiddenSet = { lg: [...DEFAULT_HIDDEN], md: [...DEFAULT_HIDDEN], sm: [...DEFAULT_HIDDEN], xs: [...DEFAULT_HIDDEN] }
-  if (typeof localStorage === 'undefined') return fallback
+  if (typeof localStorage === 'undefined') return normaliseHidden(null)
   try {
     const raw = localStorage.getItem(HIDDEN_KEY)
-    if (!raw) return fallback
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return fallback
-    return parsed as HiddenSet
+    if (!raw) return normaliseHidden(null)
+    return normaliseHidden(JSON.parse(raw))
   } catch {
-    return fallback
+    return normaliseHidden(null)
   }
 }
 

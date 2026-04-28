@@ -29,14 +29,15 @@ export function HeaderTile({ bp }: { bp: Breakpoint }) {
 
       {game && (
         <div className="flex items-center gap-3 rounded-md border border-border px-2 py-1">
-          <div className="flex items-center gap-1">
-            <img src="/1000_mini.svg" alt="kyotaku" className="h-5" />
-            <span className="font-mono text-sm font-medium">×{game.kyotaku}</span>
+          {/* Icons sized to match the Dora pill (mahgen `dora` kind = 30px). */}
+          <div className="flex items-center gap-1.5">
+            <img src="/1000_mini.svg" alt="kyotaku" className="h-[30px]" />
+            <span className="font-mono text-base font-medium">×{game.kyotaku}</span>
           </div>
           <span className="text-muted-foreground">|</span>
-          <div className="flex items-center gap-1">
-            <img src="/100_mini.svg" alt="honba" className="h-5" />
-            <span className="font-mono text-sm font-medium">×{game.honba}</span>
+          <div className="flex items-center gap-1.5">
+            <img src="/100_mini.svg" alt="honba" className="h-[30px]" />
+            <span className="font-mono text-base font-medium">×{game.honba}</span>
           </div>
         </div>
       )}
