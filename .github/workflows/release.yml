@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v3.*'
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Publish a GitHub release with the artifacts'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -16,6 +22,9 @@ env:
 jobs:
   guard:
     name: Verify tag is on v3 branch
+    # Skip the branch check on manual dispatch — the user picks the ref
+    # themselves in the dispatch UI, and there is no tag to verify.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,26 +41,24 @@ jobs:
 
   build:
     needs: guard
+    if: ${{ always() && (needs.guard.result == 'success' || needs.guard.result == 'skipped') }}
     name: ${{ matrix.target }} (${{ matrix.variant }})
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-22.04, macos-14, macos-13, windows-latest]
+        variant: [with-runtime, no-runtime]
         include:
           # Linux: ubuntu-22.04 keeps glibc old enough that the binaries
           # run on most user machines without forced glibc upgrades.
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            tauri_target: x86_64-unknown-linux-gnu
           - os: macos-14
             target: aarch64-apple-darwin
-            tauri_target: aarch64-apple-darwin
           - os: macos-13
             target: x86_64-apple-darwin
-            tauri_target: x86_64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            tauri_target: x86_64-pc-windows-msvc
-        variant: [with-runtime, no-runtime]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -161,6 +168,10 @@ jobs:
   release:
     name: Publish GitHub release
     needs: build
+    # Only publish on tag push, or when manually dispatched with the
+    # publish_release input checked. Plain workflow_dispatch (no tag, no
+    # input) just leaves artifacts on the run page.
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_release) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
