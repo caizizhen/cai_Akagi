@@ -46,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-14, macos-13, windows-latest]
+        os: [ubuntu-22.04, macos-14, windows-latest]
         variant: [with-runtime, no-runtime]
         include:
           # Linux: ubuntu-22.04 keeps glibc old enough that the binaries
@@ -55,8 +55,6 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - os: macos-14
             target: aarch64-apple-darwin
-          - os: macos-13
-            target: x86_64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
