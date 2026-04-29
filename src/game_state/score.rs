@@ -24,11 +24,19 @@ fn tid34_to_mjai(idx: u8) -> String {
     }
 }
 
-/// Calculate hand score for a given (han, fu, oya?, tsumo?, honba) tuple.
+/// Calculate hand score for a given (han, fu, oya?, tsumo?, honba, num_players) tuple.
 ///
-/// Always 4-player. If we add 3p later, expose `num_players` here too.
-pub fn calculate_score(han: u8, fu: u8, is_oya: bool, is_tsumo: bool, honba: u32) -> Score {
-    riichienv_core::score::calculate_score(han, fu, is_oya, is_tsumo, honba, 4)
+/// `num_players` is 3 for sanma or 4 for yonma. Affects honba payment splits
+/// and (in 3p) tsumo payer count.
+pub fn calculate_score(
+    han: u8,
+    fu: u8,
+    is_oya: bool,
+    is_tsumo: bool,
+    honba: u32,
+    num_players: u8,
+) -> Score {
+    riichienv_core::score::calculate_score(han, fu, is_oya, is_tsumo, honba, num_players)
 }
 
 /// Tenpai check + waits for a hand string in `riichienv` MPSZ notation
@@ -62,7 +70,7 @@ mod tests {
 
     #[test]
     fn ron_3han_30fu_non_dealer_no_honba() {
-        let s = calculate_score(3, 30, false, false, 0);
+        let s = calculate_score(3, 30, false, false, 0, 4);
         // 30 fu × 2^(2+3) = 960 base; non-dealer ron = ceil_100(960*4) = 3900.
         assert_eq!(s.total, 3900);
         assert_eq!(s.pay_ron, 3900);
@@ -71,15 +79,15 @@ mod tests {
     #[test]
     fn mangan_dealer_tsumo() {
         // 5 han = mangan; dealer tsumo = 4000 from each ko = 12000.
-        let s = calculate_score(5, 30, true, true, 0);
+        let s = calculate_score(5, 30, true, true, 0, 4);
         assert_eq!(s.total, 12_000);
         assert_eq!(s.pay_tsumo_ko, 4_000);
     }
 
     #[test]
     fn honba_adds_300_to_ron_4p() {
-        let base = calculate_score(2, 30, false, false, 0);
-        let with_honba = calculate_score(2, 30, false, false, 1);
+        let base = calculate_score(2, 30, false, false, 0, 4);
+        let with_honba = calculate_score(2, 30, false, false, 1, 4);
         // 4p ron honba = 300 added to ron pay + total.
         assert_eq!(with_honba.total, base.total + 300);
         assert_eq!(with_honba.pay_ron, base.pay_ron + 300);

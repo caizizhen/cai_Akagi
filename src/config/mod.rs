@@ -96,7 +96,7 @@ pub fn load_config(cli_path: Option<&Path>) -> (AppConfig, PathBuf) {
 
     eprintln!("Loading config from: {}", path.display());
 
-    let cfg = match std::fs::read_to_string(&path) {
+    let mut cfg = match std::fs::read_to_string(&path) {
         Ok(content) => match toml::from_str::<AppConfig>(&content) {
             Ok(config) => config,
             Err(e) => {
@@ -109,6 +109,8 @@ pub fn load_config(cli_path: Option<&Path>) -> (AppConfig, PathBuf) {
             AppConfig::default()
         }
     };
+    // Migrate legacy `[bot] active = "..."` into `active_4p` once.
+    cfg.bot.migrate_legacy_active();
     (cfg, path)
 }
 

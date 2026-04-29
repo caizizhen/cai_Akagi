@@ -16,7 +16,11 @@ const EMPTY_HIDDEN: readonly TileId[] = []
 
 export function AddTileMenu({ bp }: { bp: Breakpoint }) {
   const hidden = useLayoutStore((s) => s.hidden[bp] ?? EMPTY_HIDDEN)
+  const mode = useLayoutStore((s) => s.mode)
   const show = useLayoutStore((s) => s.show)
+
+  // 3p: never offer player-3 in the Add menu.
+  const offered = mode === '3p' ? hidden.filter((id) => id !== 'player-3') : hidden
 
   return (
     <DropdownMenu>
@@ -29,11 +33,11 @@ export function AddTileMenu({ bp }: { bp: Breakpoint }) {
       <DropdownMenuContent align="end">
         <DropdownMenuLabel className="text-xs">Hidden tiles</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {hidden.length === 0 ? (
+        {offered.length === 0 ? (
           <DropdownMenuItem disabled className="text-xs text-muted-foreground">
             All tiles are visible.
           </DropdownMenuItem>
-        ) : hidden.map((id) => (
+        ) : offered.map((id) => (
           <DropdownMenuItem key={id} onClick={() => show(id, bp)} className="text-xs">
             {TILE_TITLES[id]}
           </DropdownMenuItem>

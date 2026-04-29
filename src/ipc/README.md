@@ -56,7 +56,7 @@ without waiting for the next event.
 | `get_config`     | —                     | `AppConfig`              | Live read of in-memory config|
 | `update_config`  | `new_config`          | `()`                     | Persists to TOML; subsystems do **not** auto-restart |
 | `list_bots`      | —                     | `Vec<BotInfo>`           | Re-scans `cfg.bot.dir`       |
-| `set_active_bot` | `name`                | `()`                     | Updates + persists `bot.active` |
+| `set_active_bot` | `mode, name`          | `()`                     | Updates + persists `bot.active_4p` or `bot.active_3p` (`mode` ∈ `"4p"` / `"3p"`); empty `name` clears the slot |
 | `start_proxy`    | —                     | `()` / `Err("…running")` | Spawns supervisor; idempotent guard |
 | `stop_proxy`     | —                     | `()`                     | Sends shutdown to current proxy task |
 | `get_status`     | —                     | `Snapshot`               | One-shot dump (config, bot_status, proxy_status, log_dir) |

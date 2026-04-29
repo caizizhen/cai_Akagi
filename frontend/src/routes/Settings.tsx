@@ -164,11 +164,18 @@ export function Settings() {
             value={draft.bot.auto_sync}
             onChange={(v) => setDraft({ ...draft, bot: { ...draft.bot, auto_sync: v } })}
           />
-          <Field label="Active bot">
+          <Field label="Active bot (4p)">
             <Input
-              value={draft.bot.active}
-              onChange={(e) => setDraft({ ...draft, bot: { ...draft.bot, active: e.target.value } })}
+              value={draft.bot.active_4p}
+              onChange={(e) => setDraft({ ...draft, bot: { ...draft.bot, active_4p: e.target.value } })}
               placeholder="mortal"
+            />
+          </Field>
+          <Field label="Active bot (3p, sanma)">
+            <Input
+              value={draft.bot.active_3p}
+              onChange={(e) => setDraft({ ...draft, bot: { ...draft.bot, active_3p: e.target.value } })}
+              placeholder="(none)"
             />
           </Field>
           <Field label="Bot directory">

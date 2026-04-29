@@ -8,6 +8,7 @@ use super::agari_rate::compose;
 use super::data::point::{
     open_ron_point_with_dora, RON_POINT_DAMA, RON_POINT_RIICHI, RON_POINT_RIICHI_IPPATSU,
 };
+use super::data::tenpai::rate_3p;
 use super::hand::{OpponentInfo, PlayerInfo34};
 use super::tenpai_rate;
 use super::tile::{Tile34, TILE_COUNT};
@@ -53,7 +54,14 @@ pub fn for_opponent(active: &PlayerInfo34, op: &OpponentInfo) -> OpponentRiskVec
     let tenpai_rate = if op.is_riichi {
         100.0
     } else {
-        tenpai_rate::estimate(&op.melds, op.discards.len(), &mr_at, tedashi)
+        let rate_4p = tenpai_rate::estimate(&op.melds, op.discards.len(), &mr_at, tedashi);
+        // 3p table doesn't exist; approximate via the saturation curve from
+        // mahjong-helper (`rate_4p * (2 - rate_4p / 100)`).
+        if active.num_players == 3 {
+            rate_3p(rate_4p)
+        } else {
+            rate_4p
+        }
     };
 
     // Point fix (riichi pumps base, ippatsu more, open uses dora-dependent point).

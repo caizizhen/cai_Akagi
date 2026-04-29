@@ -95,6 +95,7 @@ async fn loading_emits_syncing_then_spawning_then_ready() {
         runtime,
         registry,
         "echo".into(),
+            String::new(),
         response_bus,
         status_bus,
         notify,
@@ -106,10 +107,11 @@ async fn loading_emits_syncing_then_spawning_then_ready() {
     tokio::time::timeout(
         Duration::from_secs(60),
         mgr.handle(MjaiEvent::StartGame {
-            names: ["a".into(), "b".into(), "c".into(), "d".into()],
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
             kyoku_first: None,
             aka_flag: None,
             id: Some(0),
+            num_players: 4,
         }),
     )
     .await
@@ -184,6 +186,7 @@ async fn second_spawn_skips_uv_sync_via_stamp() {
             runtime.clone(),
             registry.clone(),
             "echo".into(),
+            String::new(),
             response_bus,
             status_bus,
             notify,
@@ -191,10 +194,11 @@ async fn second_spawn_skips_uv_sync_via_stamp() {
         tokio::time::timeout(
             Duration::from_secs(60),
             mgr.handle(MjaiEvent::StartGame {
-                names: ["a".into(), "b".into(), "c".into(), "d".into()],
+                names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
                 kyoku_first: None,
                 aka_flag: None,
                 id: Some(0),
+                num_players: 4,
             }),
         )
         .await
@@ -212,6 +216,7 @@ async fn second_spawn_skips_uv_sync_via_stamp() {
         runtime,
         registry,
         "echo".into(),
+            String::new(),
         response_bus,
         status_bus,
         notify,
@@ -221,10 +226,11 @@ async fn second_spawn_skips_uv_sync_via_stamp() {
     tokio::time::timeout(
         Duration::from_secs(5),
         mgr.handle(MjaiEvent::StartGame {
-            names: ["a".into(), "b".into(), "c".into(), "d".into()],
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
             kyoku_first: None,
             aka_flag: None,
             id: Some(2),
+            num_players: 4,
         }),
     )
     .await

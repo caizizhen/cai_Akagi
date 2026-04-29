@@ -7,10 +7,15 @@ here so it isn't owned by a single subsystem.
 ## Existing schemas
 
 - `mjai/` — `MjaiEvent` enum covering all 15 mjai event variants from
-  `reference/reference_mjai.md`. Used by `bridge::Bridge` to expose parsed
-  game events, and by anything downstream that consumes them (AI bots,
-  loggers, frontend HUD). Tiles are kept as `String`. JSON serialization uses
-  `#[serde(tag = "type")]`, so `"type"` is always the first key.
+  `reference/reference_mjai.md` **plus** the 3p-only `Kita` variant
+  (北抜き / nukidora) per `reference/reference_mjai_3p.md`. Used by
+  `bridge::Bridge` to expose parsed game events, and by anything
+  downstream that consumes them (AI bots, loggers, frontend HUD). Tiles
+  are kept as `String`. JSON serialization uses `#[serde(tag = "type")]`,
+  so `"type"` is always the first key. Player-shaped fields (`names`,
+  `scores`, `tehais`, `deltas`) are `Vec<T>` of native length; `StartGame`
+  and `StartKyoku` carry `num_players: u8` (serde default `4` for
+  backward-compat with pre-3p log lines).
 
 ## Adding a new schema
 

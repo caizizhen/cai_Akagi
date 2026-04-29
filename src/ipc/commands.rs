@@ -116,18 +116,32 @@ pub async fn update_bot_settings(
     Ok(())
 }
 
-/// Update `bot.active` in config + persist. Doesn't restart the running
-/// `BotManager` — that respawns on the next `start_game` event anyway.
+/// Update the active bot for a given mode (`"4p"` or `"3p"`) in config +
+/// persist. Doesn't restart the running `BotManager` — that respawns on the
+/// next `start_game` event anyway, and picks the matching mode bot then.
+///
+/// Empty `name` clears that mode's active bot (analysis-only in that mode).
 #[tauri::command]
-pub async fn set_active_bot(name: String, state: State<'_, AppState>) -> CmdResult<()> {
+pub async fn set_active_bot(
+    mode: String,
+    name: String,
+    state: State<'_, AppState>,
+) -> CmdResult<()> {
     {
         let mut cfg = state.config.write().await;
-        cfg.bot.active = name.clone();
+        match mode.as_str() {
+            "4p" => cfg.bot.active_4p = name.clone(),
+            "3p" => cfg.bot.active_3p = name.clone(),
+            other => return Err(format!("unknown mode {other:?}; expected \"4p\" or \"3p\"")),
+        }
         persist_config(&cfg, &state.config_path).map_err(|e| e.to_string())?;
     }
-    let _ = state
-        .notify_bus
-        .send(Notification::success(format!("Active bot set to {name}")));
+    let label = if name.is_empty() {
+        format!("{mode} bot cleared")
+    } else {
+        format!("Active {mode} bot set to {name}")
+    };
+    let _ = state.notify_bus.send(Notification::success(label));
     Ok(())
 }
 
@@ -290,13 +304,17 @@ pub async fn get_mahgen_view(state: State<'_, AppState>) -> CmdResult<Option<Mah
 /// depth even though `name` came from the bot list, not raw user input).
 #[tauri::command]
 pub async fn delete_bot(name: String, state: State<'_, AppState>) -> CmdResult<()> {
-    let (active, dir) = {
+    let (active_4p, active_3p, dir) = {
         let cfg = state.config.read().await;
-        (cfg.bot.active.clone(), cfg.bot.dir.clone())
+        (
+            cfg.bot.active_4p.clone(),
+            cfg.bot.active_3p.clone(),
+            cfg.bot.dir.clone(),
+        )
     };
-    if active == name {
+    if active_4p == name || active_3p == name {
         return Err(format!(
-            "{name:?} is the active bot — switch to a different bot first"
+            "{name:?} is an active bot (4p or 3p) — switch to a different bot first"
         ));
     }
     if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
@@ -369,14 +387,16 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("nested").join("config.toml");
         let mut cfg = AppConfig::default();
-        cfg.bot.active = "mortal".into();
+        cfg.bot.active_4p = "mortal".into();
+        cfg.bot.active_3p = "mortal_3p".into();
         cfg.proxy.addr = "127.0.0.1:9999".into();
 
         persist_config(&cfg, &path).unwrap();
 
         let body = std::fs::read_to_string(&path).unwrap();
         let back: AppConfig = toml::from_str(&body).unwrap();
-        assert_eq!(back.bot.active, "mortal");
+        assert_eq!(back.bot.active_4p, "mortal");
+        assert_eq!(back.bot.active_3p, "mortal_3p");
         assert_eq!(back.proxy.addr, "127.0.0.1:9999");
     }
 }

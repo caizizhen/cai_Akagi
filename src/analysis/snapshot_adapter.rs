@@ -93,10 +93,12 @@ fn hand_from_tehai(tehai: &[String]) -> Result<(Counts34, u8)> {
     Ok((counts, aka))
 }
 
-/// Compute a player's seat wind tile (`E`/`S`/`W`/`N`) given the dealer seat.
-/// Mapping: relative offset 0 → E, 1 → S, 2 → W, 3 → N.
-fn jikaze_for(seat: u8, oya: u8) -> Tile34 {
-    let offset = (seat + 4 - oya) % 4;
+/// Compute a player's seat wind tile (`E`/`S`/`W`/`N`) given the dealer seat
+/// and the number of players. 4p maps offsets 0/1/2/3 → E/S/W/N. 3p has no
+/// player-N wind, so offsets cycle 0/1/2 → E/S/W.
+fn jikaze_for(seat: u8, oya: u8, num_players: u8) -> Tile34 {
+    let np = num_players.max(1);
+    let offset = (seat + np - oya) % np;
     Tile34(HONOR_E + offset)
 }
 
@@ -124,7 +126,7 @@ fn build_opponent(snap: &GameStateSnapshot, p: &PlayerSnapshot) -> Result<Oppone
         is_riichi: p.riichi_declared,
         riichi_turn: p.riichi_declaration_index.map(|i| i as u8),
         can_ippatsu: false,
-        jikaze: jikaze_for(p.seat, snap.oya),
+        jikaze: jikaze_for(p.seat, snap.oya, snap.num_players),
         called_from: vec![],
     })
 }
@@ -148,7 +150,7 @@ pub fn to_player_info(snap: &GameStateSnapshot, seat: u8) -> Result<PlayerInfo34
         .map(|s| parse_tile(s))
         .collect::<Result<Vec<_>>>()?;
     let bakaze = parse_tile(&snap.bakaze)?;
-    let jikaze = jikaze_for(seat, snap.oya);
+    let jikaze = jikaze_for(seat, snap.oya, snap.num_players);
     let own_discards = river_to_tiles(&me.river)?;
     let turn = own_discards.len() as u8;
 
@@ -160,6 +162,7 @@ pub fn to_player_info(snap: &GameStateSnapshot, seat: u8) -> Result<PlayerInfo34
         .collect::<Result<Vec<_>>>()?;
 
     Ok(PlayerInfo34 {
+        num_players: snap.num_players,
         seat,
         hand,
         melds,
@@ -194,6 +197,7 @@ mod tests {
             riichi_stage: false,
             double_riichi: false,
             riichi_declaration_index: None,
+            kita_tiles: vec![],
         };
         GameStateSnapshot {
             bakaze: "E".into(),
@@ -205,7 +209,8 @@ mod tests {
             turn_count: 0,
             phase: Phase::WaitAct,
             is_done: false,
-            players: [
+            num_players: 4,
+            players: vec![
                 make_player(0, tehai.into_iter().map(String::from).collect()),
                 make_player(1, vec!["1m".into(); 13]),
                 make_player(2, vec!["1m".into(); 13]),
@@ -218,14 +223,24 @@ mod tests {
 
     #[test]
     fn jikaze_rotates_with_oya() {
-        // seat == oya → E
-        assert_eq!(jikaze_for(0, 0).to_mjai(), "E");
-        // seat one to the right of oya → S
-        assert_eq!(jikaze_for(1, 0).to_mjai(), "S");
-        // seat == oya - 1 (mod 4) → N
-        assert_eq!(jikaze_for(0, 1).to_mjai(), "N");
-        assert_eq!(jikaze_for(2, 0).to_mjai(), "W");
-        assert_eq!(jikaze_for(3, 0).to_mjai(), "N");
+        // 4p: seat == oya → E
+        assert_eq!(jikaze_for(0, 0, 4).to_mjai(), "E");
+        // 4p: seat one to the right of oya → S
+        assert_eq!(jikaze_for(1, 0, 4).to_mjai(), "S");
+        // 4p: seat == oya - 1 (mod 4) → N
+        assert_eq!(jikaze_for(0, 1, 4).to_mjai(), "N");
+        assert_eq!(jikaze_for(2, 0, 4).to_mjai(), "W");
+        assert_eq!(jikaze_for(3, 0, 4).to_mjai(), "N");
+    }
+
+    #[test]
+    fn jikaze_3p_skips_north_self_wind() {
+        // 3p: only E/S/W cycle; oya at seat 0 → seat 0 = E, 1 = S, 2 = W.
+        assert_eq!(jikaze_for(0, 0, 3).to_mjai(), "E");
+        assert_eq!(jikaze_for(1, 0, 3).to_mjai(), "S");
+        assert_eq!(jikaze_for(2, 0, 3).to_mjai(), "W");
+        // Oya rotation: seat 0 with oya=1 wraps to W, not N.
+        assert_eq!(jikaze_for(0, 1, 3).to_mjai(), "W");
     }
 
     #[test]

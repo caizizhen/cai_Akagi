@@ -38,7 +38,12 @@ use tracing::{debug, error, info, warn};
 pub struct BotManager {
     runtime: PythonRuntime,
     registry: BotRegistry,
-    /// Bot subdirectory name (matches a `BotEntry::name`).
+    /// Active bot subdir name for 4-player games. Empty ⇒ no 4p bot configured.
+    active_4p: String,
+    /// Active bot subdir name for 3-player games. Empty ⇒ no 3p bot configured.
+    active_3p: String,
+    /// Subdir name of the bot currently spawned for the in-progress game
+    /// (one of `active_4p` / `active_3p`, decided at `start_game`).
     active_name: String,
     runner: Option<Box<dyn BotRunner>>,
     /// Events seen since the last `react()` call.
@@ -54,14 +59,18 @@ impl BotManager {
     pub fn new(
         runtime: PythonRuntime,
         registry: BotRegistry,
-        active_name: String,
+        active_4p: String,
+        active_3p: String,
         out_tx: BotResponseBus,
         status_tx: BotStatusBus,
         notify_tx: NotifyBus,
     ) -> Self {
+        let active_name = active_4p.clone();
         Self {
             runtime,
             registry,
+            active_4p,
+            active_3p,
             active_name,
             runner: None,
             pending: Vec::new(),
@@ -117,8 +126,25 @@ impl BotManager {
     /// Drive one event through the manager. Public for unit tests.
     pub async fn handle(&mut self, event: MjaiEvent) -> Result<()> {
         // Spawn the runner the moment we see the bot's seat in start_game.
-        if let MjaiEvent::StartGame { id: Some(seat), .. } = &event {
+        if let MjaiEvent::StartGame { id: Some(seat), num_players, .. } = &event {
             self.actor_id = Some(*seat);
+            // Pick the active bot for this game's player count.
+            let chosen = if *num_players == 3 {
+                &self.active_3p
+            } else {
+                &self.active_4p
+            };
+            if chosen.is_empty() {
+                warn!(
+                    "no bot configured for {np}p; running analysis-only for this game",
+                    np = num_players
+                );
+                self.runner = None;
+                self.pending.clear();
+                self.emit_status(BotStatus::Idle);
+                return Ok(());
+            }
+            self.active_name = chosen.clone();
             self.spawn_runner().await?;
             self.pending.clear();
         }
@@ -448,6 +474,7 @@ mod tests {
             dummy_runtime(),
             empty_registry(),
             "mock".into(),
+            String::new(),
             bus,
             status,
             notify,
@@ -647,6 +674,7 @@ mod tests {
             dummy_runtime(),
             empty_registry(),
             "mock".into(),
+            String::new(),
             bus,
             status,
             notify,
@@ -685,6 +713,7 @@ mod tests {
             dummy_runtime(),
             empty_registry(),
             "ghost".into(),
+            String::new(),
             bus,
             status,
             notify,
@@ -692,10 +721,11 @@ mod tests {
 
         let err = mgr
             .handle(MjaiEvent::StartGame {
-                names: ["a".into(), "b".into(), "c".into(), "d".into()],
+                names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
                 kyoku_first: None,
                 aka_flag: None,
                 id: Some(0),
+                num_players: 4,
             })
             .await
             .unwrap_err();
@@ -721,6 +751,7 @@ mod tests {
             dummy_runtime(),
             empty_registry(),
             "mock".into(),
+            String::new(),
             bus,
             status,
             notify,
@@ -744,6 +775,7 @@ mod tests {
             dummy_runtime(),
             empty_registry(),
             "mock".into(),
+            String::new(),
             bot_bus,
             status,
             notify,

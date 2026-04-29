@@ -13,6 +13,7 @@
 
 use riichienv_core::parser::tid_to_mjai;
 use riichienv_core::state::GameState;
+use riichienv_core::state_3p::GameState3P;
 use riichienv_core::types::{Meld, MeldType};
 use serde::{Deserialize, Serialize};
 
@@ -111,6 +112,10 @@ pub struct PlayerSnapshot {
     pub double_riichi: bool,
     /// Index in `river` of the riichi-committing discard, if any.
     pub riichi_declaration_index: Option<usize>,
+    /// Kita (北抜き / nukidora) tiles set aside this round. 3p only;
+    /// always empty in 4p. mjai tile strings (always `"N"` in practice).
+    #[serde(default)]
+    pub kita_tiles: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,44 +131,52 @@ pub struct GameStateSnapshot {
     pub turn_count: u32,
     pub phase: Phase,
     pub is_done: bool,
-    pub players: [PlayerSnapshot; 4],
+    /// 3 (sanma) or 4 (yonma).
+    #[serde(default = "default_num_players")]
+    pub num_players: u8,
+    /// One entry per seat. Length matches `num_players`.
+    pub players: Vec<PlayerSnapshot>,
     pub dora_markers: Vec<String>,
     /// The seat the active observer (our bot) plays as. Captured from the
     /// `start_game.id` field. `None` if the bridge didn't tag a perspective.
     pub our_seat: Option<u8>,
 }
 
+fn default_num_players() -> u8 {
+    4
+}
+
 impl GameStateSnapshot {
-    /// Build a snapshot. `our_seat` is threaded in by the tracker — see
-    /// [`crate::game_state::tracker`].
+    /// Build a snapshot from a 4-player engine state. `our_seat` is threaded
+    /// in by the tracker — see [`crate::game_state::tracker`].
     pub fn from_state(s: &GameState, our_seat: Option<u8>) -> Self {
-        let players: [PlayerSnapshot; 4] = std::array::from_fn(|i| {
-            let p = &s.players[i];
-            // Pair each discard with its tedashi + riichi-commit flags.
-            // riichienv guarantees parallel arrays; if they ever drift we
-            // fall back to defaults so a malformed snapshot still renders.
-            let river: Vec<DiscardEntry> = p
-                .discards
-                .iter()
-                .enumerate()
-                .map(|(idx, &tile)| DiscardEntry {
-                    tile: tid_to_mjai(tile),
-                    tedashi: p.discard_from_hand.get(idx).copied().unwrap_or(true),
-                    is_riichi: p.discard_is_riichi.get(idx).copied().unwrap_or(false),
-                })
-                .collect();
-            PlayerSnapshot {
-                seat: i as u8,
-                tehai: p.hand.iter().copied().map(tid_to_mjai).collect(),
-                melds: p.melds.iter().map(MeldSnapshot::from).collect(),
-                river,
-                score: p.score,
-                riichi_declared: p.riichi_declared,
-                riichi_stage: p.riichi_stage,
-                double_riichi: p.double_riichi_declared,
-                riichi_declaration_index: p.riichi_declaration_index,
-            }
-        });
+        let players: Vec<PlayerSnapshot> = (0..s.players.len())
+            .map(|i| {
+                let p = &s.players[i];
+                let river: Vec<DiscardEntry> = p
+                    .discards
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, &tile)| DiscardEntry {
+                        tile: tid_to_mjai(tile),
+                        tedashi: p.discard_from_hand.get(idx).copied().unwrap_or(true),
+                        is_riichi: p.discard_is_riichi.get(idx).copied().unwrap_or(false),
+                    })
+                    .collect();
+                PlayerSnapshot {
+                    seat: i as u8,
+                    tehai: p.hand.iter().copied().map(tid_to_mjai).collect(),
+                    melds: p.melds.iter().map(MeldSnapshot::from).collect(),
+                    river,
+                    score: p.score,
+                    riichi_declared: p.riichi_declared,
+                    riichi_stage: p.riichi_stage,
+                    double_riichi: p.double_riichi_declared,
+                    riichi_declaration_index: p.riichi_declaration_index,
+                    kita_tiles: Vec::new(),
+                }
+            })
+            .collect();
 
         Self {
             bakaze: wind_to_str(s.round_wind).to_string(),
@@ -178,6 +191,62 @@ impl GameStateSnapshot {
             turn_count: s.turn_count,
             phase: s.phase.into(),
             is_done: s.is_done,
+            num_players: s.players.len() as u8,
+            players,
+            dora_markers: s
+                .wall
+                .dora_indicators
+                .iter()
+                .copied()
+                .map(tid_to_mjai)
+                .collect(),
+            our_seat,
+        }
+    }
+
+    /// Build a snapshot from a 3-player (sanma) engine state. Mirrors
+    /// `from_state` but populates `PlayerSnapshot.kita_tiles` from the 3p
+    /// engine's per-player kita pool.
+    pub fn from_state_3p(s: &GameState3P, our_seat: Option<u8>) -> Self {
+        let players: Vec<PlayerSnapshot> = (0..s.players.len())
+            .map(|i| {
+                let p = &s.players[i];
+                let river: Vec<DiscardEntry> = p
+                    .discards
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, &tile)| DiscardEntry {
+                        tile: tid_to_mjai(tile),
+                        tedashi: p.discard_from_hand.get(idx).copied().unwrap_or(true),
+                        is_riichi: p.discard_is_riichi.get(idx).copied().unwrap_or(false),
+                    })
+                    .collect();
+                PlayerSnapshot {
+                    seat: i as u8,
+                    tehai: p.hand.iter().copied().map(tid_to_mjai).collect(),
+                    melds: p.melds.iter().map(MeldSnapshot::from).collect(),
+                    river,
+                    score: p.score,
+                    riichi_declared: p.riichi_declared,
+                    riichi_stage: p.riichi_stage,
+                    double_riichi: p.double_riichi_declared,
+                    riichi_declaration_index: p.riichi_declaration_index,
+                    kita_tiles: p.kita_tiles.iter().copied().map(tid_to_mjai).collect(),
+                }
+            })
+            .collect();
+
+        Self {
+            bakaze: wind_to_str(s.round_wind).to_string(),
+            kyoku: s.kyoku_idx + 1,
+            honba: s.honba,
+            kyotaku: s.riichi_sticks,
+            oya: s.oya,
+            current_player: s.current_player,
+            turn_count: s.turn_count,
+            phase: s.phase.into(),
+            is_done: s.is_done,
+            num_players: s.players.len() as u8,
             players,
             dora_markers: s
                 .wall

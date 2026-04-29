@@ -288,10 +288,11 @@ for line in sys.stdin:
         let mut bot = spawn_echo(tmp.path()).await.unwrap();
         let resp = bot
             .react(&[MjaiEvent::StartGame {
-                names: ["a".into(), "b".into(), "c".into(), "d".into()],
+                names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
                 kyoku_first: None,
                 aka_flag: None,
                 id: Some(0),
+                num_players: 4,
             }])
             .await
             .unwrap();

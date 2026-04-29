@@ -159,7 +159,7 @@ Fifteen commands. All async. Errors return as `string` (Tauri convention).
 | `get_config` | — | `AppConfig` | Current loaded config |
 | `update_config` | `(new_config: AppConfig)` | `void` | Persist new config to file |
 | `list_bots` | — | `BotInfo[]` | Scan `mjai_bot/` for available bots (each entry includes its manifest, if any) |
-| `set_active_bot` | `(name: string)` | `void` | Set `bot.active` in config |
+| `set_active_bot` | `(mode: '4p' \| '3p', name: string)` | `void` | Set `bot.active_4p` or `bot.active_3p` in config; empty `name` clears the slot |
 | `get_bot_settings` | `(name: string)` | `BotSettings` | Manifest schema + current values for one bot |
 | `update_bot_settings` | `(name: string, values: Record<string, unknown>)` | `void` | Validate against manifest + persist to bot's `settings.toml` |
 | `install_bot_from_github` | `(repo: string, assetGlob?: string, name?: string)` | `BotInfo` | Download latest release zip + extract into `mjai_bot/<name>/` |
@@ -181,8 +181,9 @@ applyConfig(snap.config);
 setBotStatus(snap.bot_status);
 setProxyStatus(snap.proxy_status);
 
-// User picks a bot.
-await invoke('set_active_bot', { name: 'mortal' });
+// User picks a bot for 4p or 3p (separate slots).
+await invoke('set_active_bot', { mode: '4p', name: 'mortal' });
+await invoke('set_active_bot', { mode: '3p', name: 'mortal3p' });
 
 // User starts proxy.
 try {
@@ -368,12 +369,13 @@ type GameStateSnapshot = {
   kyoku: number;             // 1..4
   honba: number;
   kyotaku: number;
-  oya: number;               // 0..3
-  current_player: number;    // 0..3
+  oya: number;               // 0..=2 (3p) or 0..=3 (4p)
+  current_player: number;    // 0..=2 (3p) or 0..=3 (4p)
   turn_count: number;
   phase: 'wait_act' | 'wait_response';
   is_done: boolean;
-  players: [PlayerSnapshot, PlayerSnapshot, PlayerSnapshot, PlayerSnapshot];
+  num_players: number;       // 3 (sanma) or 4 (yonma)
+  players: PlayerSnapshot[]; // length matches num_players
   dora_markers: string[];
   our_seat: number | null;   // captured from start_game.id
 };
@@ -388,12 +390,13 @@ type PlayerSnapshot = {
   riichi_stage: boolean;         // mid-declaration window
   double_riichi: boolean;
   riichi_declaration_index: number | null;
+  kita_tiles: string[];          // 3p only — north tiles set aside via 北抜き; empty in 4p
 };
 
 type MeldSnapshot = {
   kind: 'chi' | 'pon' | 'daiminkan' | 'ankan' | 'kakan';
   tiles: string[];
-  from_who: number;              // -1 for ankan/kakan; 0..3 otherwise
+  from_who: number;              // -1 for ankan/kakan; 0..2 (3p) or 0..3 (4p) otherwise
   called_tile: string | null;
 };
 
@@ -410,7 +413,8 @@ Pre-encoded mahgen DSL strings. Hand with all logic done backend-side — fronte
 
 ```ts
 type MahgenView = {
-  players: [PlayerMahgenView, PlayerMahgenView, PlayerMahgenView, PlayerMahgenView];
+  players: PlayerMahgenView[];   // length matches num_players (3 for sanma, 4 for yonma)
+  num_players: number;           // 3 or 4
   dora_indicators: string;       // e.g. "2m" or "2m3p" multi-suit
 };
 
@@ -590,6 +594,12 @@ Mahgen invocation:
 7. **`update_config` does NOT restart subsystems**: changing `proxy.addr` requires `stop_proxy` + `start_proxy`. Bot config takes effect on the next game.
 
 8. **`set_active_bot` does NOT re-spawn** the running bot. The change applies on the next `start_game`. Display a notification suggesting the user end the current game or restart Akagi.
+
+9. **3p / 4p**: every game-shaped array (`players`, `scores`, `tehais`, `deltas`, `names`) is `num_players`-length. Frontend must read `game.num_players` (default 4) and never index seat 3 unconditionally. `useNumPlayers()` from `stores/gameStore` exposes this; `relativeKind(seat, ourSeat, numPlayers)` and `bakazeFor(seat, oya, numPlayers)` are 3p-aware. 3p has no `toimen` (opposite seat doesn't exist in a triangle).
+
+10. **`kita` event** (3p only): `MjaiEvent` of `type: 'kita'` carries `actor` and optional `pai` (`"N"`). PlayerTile renders a 北×N badge from `PlayerSnapshot.kita_tiles`.
+
+11. **Bot per-mode toggle**: `BotInfo.manifest?.bot.supported_modes` (default `["4p"]`) controls which mode switches are enabled in the Bots route. Use `invoke('set_active_bot', { mode, name })` to set; pass `name: ""` to clear.
 
 ---
 

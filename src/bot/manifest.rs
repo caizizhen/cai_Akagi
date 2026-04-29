@@ -62,7 +62,7 @@ impl Default for Manifest {
 
 /// Bot-level metadata (separate from the `meta` field on a `BotResponse` —
 /// renamed `ManifestBot` to avoid the name clash).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ManifestBot {
     /// Subdir name under `mjai_bot/`. Should match the directory name.
@@ -76,6 +76,21 @@ pub struct ManifestBot {
     /// Bot's own version string (mirrors `pyproject.toml::version`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// Game modes this bot can play. Accepted values: `"4p"`, `"3p"`.
+    /// Defaults to `["4p"]` when absent so existing manifests stay 4p-only.
+    pub supported_modes: Vec<String>,
+}
+
+impl Default for ManifestBot {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            display: None,
+            description: None,
+            version: None,
+            supported_modes: vec!["4p".to_string()],
+        }
+    }
 }
 
 /// Optional source pointer for Phase 3 (GitHub install). Tagged on `type`.

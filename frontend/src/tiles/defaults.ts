@@ -107,6 +107,80 @@ export const DEFAULT_LAYOUTS: Record<Breakpoint, LayoutItem[]> = {
   xs: XS_LAYOUT,
 }
 
+// === 3p (sanma) layouts ===
+//
+// Sanma has only 3 player seats — `player-3` is suppressed and the freed
+// grid space goes to the remaining player tiles. `DEFAULT_HIDDEN_3P`
+// includes `player-3` so the registry skips rendering it; the layout
+// entry itself is omitted (smaller saved layout footprint).
+
+const LG_LAYOUT_3P: LayoutItem[] = [
+  { i: 'header',          x: 0, y: 0,  w: 12, h: 3, minW: 6, minH: 2, maxH: 5 },
+  { i: 'player-0',        x: 0, y: 2,  w: 4,  h: 8, minW: 2, minH: 6 },
+  { i: 'player-1',        x: 4, y: 2,  w: 4,  h: 8, minW: 2, minH: 6 },
+  { i: 'recommendations', x: 8, y: 2,  w: 4,  h: 8, minW: 2, minH: 4 },
+  { i: 'player-2',        x: 0, y: 10, w: 6,  h: 6, minW: 3, minH: 4 },
+  { i: 'risk-chart',      x: 6, y: 10, w: 3,  h: 6, minW: 2, minH: 4 },
+  { i: 'opponents',       x: 9, y: 10, w: 3,  h: 6, minW: 2, minH: 4 },
+  { i: 'self-hand',       x: 0, y: 16, w: 12, h: 4, minW: 6, minH: 2, maxH: 6 },
+  { i: 'events',          x: 0, y: 19, w: 3,  h: 5, minW: 2, minH: 3 },
+  { i: 'notifications',   x: 3, y: 19, w: 3,  h: 5, minW: 2, minH: 3 },
+  { i: 'proxy-control',   x: 6, y: 19, w: 3,  h: 5, minW: 2, minH: 2, maxH: 6 },
+  { i: 'bot-responses',   x: 9, y: 19, w: 3,  h: 5, minW: 2, minH: 3 },
+]
+
+const MD_LAYOUT_3P: LayoutItem[] = [
+  { i: 'header',          x: 0, y: 0,  w: 10, h: 3, minW: 5, minH: 2, maxH: 5 },
+  { i: 'player-0',        x: 0, y: 2,  w: 5,  h: 8, minW: 2, minH: 6 },
+  { i: 'player-1',        x: 5, y: 2,  w: 5,  h: 8, minW: 2, minH: 6 },
+  { i: 'recommendations', x: 0, y: 10, w: 5,  h: 6, minW: 2, minH: 4 },
+  { i: 'player-2',        x: 5, y: 10, w: 5,  h: 6, minW: 3, minH: 4 },
+  { i: 'risk-chart',      x: 0, y: 16, w: 5,  h: 6, minW: 2, minH: 4 },
+  { i: 'opponents',       x: 5, y: 16, w: 5,  h: 6, minW: 2, minH: 4 },
+  { i: 'self-hand',       x: 0, y: 22, w: 10, h: 4, minW: 5, minH: 2, maxH: 6 },
+  { i: 'events',          x: 0, y: 25, w: 5,  h: 5, minW: 2, minH: 3 },
+  { i: 'notifications',   x: 5, y: 25, w: 5,  h: 5, minW: 2, minH: 3 },
+  { i: 'proxy-control',   x: 0, y: 30, w: 5,  h: 5, minW: 2, minH: 2, maxH: 6 },
+  { i: 'bot-responses',   x: 5, y: 30, w: 5,  h: 5, minW: 2, minH: 3 },
+]
+
+const SM_LAYOUT_3P: LayoutItem[] = [
+  { i: 'header',          x: 0, y: 0,  w: 6, h: 3, minW: 4, minH: 2, maxH: 5 },
+  { i: 'player-0',        x: 0, y: 2,  w: 3, h: 8, minW: 2, minH: 6 },
+  { i: 'player-1',        x: 3, y: 2,  w: 3, h: 8, minW: 2, minH: 6 },
+  { i: 'recommendations', x: 0, y: 10, w: 6, h: 8, minW: 2, minH: 4 },
+  { i: 'player-2',        x: 0, y: 18, w: 6, h: 6, minW: 3, minH: 4 },
+  { i: 'risk-chart',      x: 0, y: 24, w: 3, h: 6, minW: 2, minH: 4 },
+  { i: 'opponents',       x: 3, y: 24, w: 3, h: 6, minW: 2, minH: 4 },
+  { i: 'self-hand',       x: 0, y: 30, w: 6, h: 4, minW: 4, minH: 2, maxH: 6 },
+  { i: 'events',          x: 0, y: 33, w: 3, h: 5, minW: 2, minH: 3 },
+  { i: 'notifications',   x: 3, y: 33, w: 3, h: 5, minW: 2, minH: 3 },
+  { i: 'proxy-control',   x: 0, y: 38, w: 3, h: 5, minW: 2, minH: 2, maxH: 6 },
+  { i: 'bot-responses',   x: 3, y: 38, w: 3, h: 5, minW: 2, minH: 3 },
+]
+
+const ALL_TILES_3P: TileId[] = ALL_TILES.filter((id) => id !== 'player-3')
+
+const XS_LAYOUT_3P: LayoutItem[] = ALL_TILES_3P.map((id, i) => ({
+  i: id,
+  x: 0,
+  y: i * 6,
+  w: 4,
+  h: id === 'header' || id === 'self-hand' ? 4 : 6,
+  minW: 4,
+  minH: 2,
+}))
+
+export const DEFAULT_LAYOUTS_3P: Record<Breakpoint, LayoutItem[]> = {
+  lg: LG_LAYOUT_3P,
+  md: MD_LAYOUT_3P,
+  sm: SM_LAYOUT_3P,
+  xs: XS_LAYOUT_3P,
+}
+
+/** 3p hides player-3 (no fourth player). */
+export const DEFAULT_HIDDEN_3P: TileId[] = ['player-3']
+
 export const TILE_TITLES: Record<TileId, string> = {
   'header':          'Game Header',
   'player-0':        'Player 1',

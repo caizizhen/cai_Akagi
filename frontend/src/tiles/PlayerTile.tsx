@@ -11,13 +11,6 @@ const SEAT_TO_TILE: Record<number, TileId> = {
   3: 'player-3',
 }
 
-const SEAT_TITLE: Record<number, string> = {
-  0: 'Player 1',
-  1: 'Player 2',
-  2: 'Player 3',
-  3: 'Player 4',
-}
-
 const KIND_LABEL: Record<string, string> = {
   self: 'Self',
   shimocha: '下家',
@@ -25,19 +18,21 @@ const KIND_LABEL: Record<string, string> = {
   kamicha: '上家',
 }
 
-export function PlayerTile({ seat, bp }: { seat: 0 | 1 | 2 | 3; bp: Breakpoint }) {
+export function PlayerTile({ seat, bp }: { seat: number; bp: Breakpoint }) {
   const game = useGameStore((s) => s.game)
   const view = useGameStore((s) => s.view)
+  const numPlayers = game?.num_players ?? 4
   const player = game?.players[seat]
   const playerView = view?.players[seat]
   const ourSeat = game?.our_seat ?? null
-  const kind = relativeKind(seat, ourSeat)
+  const kind = relativeKind(seat, ourSeat, numPlayers)
   const isSelf = kind === 'self'
   const id = SEAT_TO_TILE[seat]
-  const title = `${SEAT_TITLE[seat]}${isSelf ? ' (Self)' : ''}`
+  const title = `Player ${seat + 1}${isSelf ? ' (Self)' : ''}`
 
-  // bakaze of this seat (E/S/W/N rotates from oya)
-  const seatWind = game ? bakazeFor(seat, game.oya) : '—'
+  // bakaze of this seat (E/S/W rotates from oya in 3p; E/S/W/N in 4p)
+  const seatWind = game ? bakazeFor(seat, game.oya, numPlayers) : '—'
+  const kitaCount = player?.kita_tiles?.length ?? 0
 
   return (
     <TileFrame
@@ -59,22 +54,20 @@ export function PlayerTile({ seat, bp }: { seat: 0 | 1 | 2 | 3; bp: Breakpoint }
               Riichi
             </span>
           )}
+          {kitaCount > 0 && (
+            <span
+              title="Kita / 北抜き (nukidora)"
+              className="rounded bg-sky-500/15 text-sky-400 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
+            >
+              北×{kitaCount}
+            </span>
+          )}
         </div>
         <span className="font-mono text-base font-semibold">{fmtScore(player?.score)}</span>
       </div>
 
       {playerView && (
         <>
-          {isSelf ? (
-            <div className="flex flex-wrap items-end gap-1">
-              <Mahgen seq={playerView.hand} kind="hand" />
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-end gap-1">
-              <Mahgen seq={playerView.hand} kind="melds" />
-            </div>
-          )}
-
           {playerView.melds.length > 0 && (
             <div className="flex flex-wrap items-end gap-1">
               {playerView.melds.map((meld, i) => (
@@ -94,8 +87,10 @@ export function PlayerTile({ seat, bp }: { seat: 0 | 1 | 2 | 3; bp: Breakpoint }
   )
 }
 
-// East = oya seat. Each subsequent seat rotates S → W → N.
-function bakazeFor(seat: number, oya: number): string {
+// East = oya seat. Each subsequent seat rotates S → W → N (4p) or
+// S → W (3p — sanma has no N self-wind, only E/S/W).
+function bakazeFor(seat: number, oya: number, numPlayers: number): string {
   const order = ['E', 'S', 'W', 'N']
-  return BAKAZE_LABEL[order[(seat - oya + 4) % 4]]
+  const n = Math.max(1, numPlayers)
+  return BAKAZE_LABEL[order[(seat - oya + n) % n]]
 }

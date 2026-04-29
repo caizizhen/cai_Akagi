@@ -37,6 +37,7 @@ const ACTION_AN_GANG_ADD_GANG: &str = "ActionAnGangAddGang";
 const ACTION_HULE: &str = "ActionHule";
 const ACTION_NO_TILE: &str = "ActionNoTile";
 const ACTION_LIU_JU: &str = "ActionLiuJu";
+const ACTION_BA_BEI: &str = "ActionBaBei";
 
 // ChiPengGang.type
 const CHI_PENG_GANG_CHI: u64 = 0;
@@ -115,6 +116,10 @@ pub struct MajsoulBridge {
     /// next action is `ActionHule` — a ron on the declaration tile voids
     /// the riichi.
     pending_reach_accepted: Option<Actor>,
+    /// 3 (sanma) or 4 (yonma). Resolved from `seat_list.len()` on the
+    /// `authGame` response. Defaults to 4 so per-flow code that runs before
+    /// auth (none today, but be defensive) sees a sane value.
+    num_players: u8,
 }
 
 impl MajsoulBridge {
@@ -131,6 +136,7 @@ impl MajsoulBridge {
             deferred_dora: None,
             last_revealed_tile_actor: None,
             pending_reach_accepted: None,
+            num_players: 4,
         }
     }
 
@@ -249,6 +255,7 @@ impl MajsoulBridge {
             ACTION_NO_TILE => self.build_no_tile(action_data),
             ACTION_LIU_JU => self.build_liu_ju(action_data),
             ACTION_HULE => self.build_hule(action_data),
+            ACTION_BA_BEI => self.build_kita(action_data),
             _ => return Vec::new(),
         };
         let events = match result {
@@ -463,6 +470,16 @@ impl MajsoulBridge {
 
         let event = match kind {
             CHI_PENG_GANG_CHI => {
+                if self.num_players == 3 {
+                    // Sanma has no chi. Majsoul shouldn't send it for 3p
+                    // tables but log loudly and drop if it does, rather than
+                    // propagate a malformed mjai stream.
+                    warn!(
+                        target: "akagi::bridge::majsoul",
+                        "received ActionChiPengGang(chi) in 3p flow; dropping (data={data})"
+                    );
+                    return Ok(Vec::new());
+                }
                 if consumed.len() != 2 {
                     bail!("chi expects 2 consumed tiles, got {}", consumed.len());
                 }
@@ -568,12 +585,11 @@ impl MajsoulBridge {
     /// payment correctly.
     ///
     /// `data.scores[]` is an array of `NoTileScoreInfo` — each entry
-    /// carries its own `delta_scores: [4]`. Multiple entries can occur
-    /// (rare — e.g. tenpai redistribution + nagashi mangan in the same
-    /// frame); the bridge sums them per seat. 3p tables produce a
-    /// 3-element delta which we pad to `[i32; 4]` with a trailing 0.
+    /// carries its own `delta_scores` array sized to `num_players`. Multiple
+    /// entries can occur (rare — e.g. tenpai redistribution + nagashi mangan
+    /// in the same frame); the bridge sums them per seat.
     fn build_no_tile(&mut self, data: &JsonValue) -> Result<Vec<MjaiEvent>> {
-        let deltas = sum_delta_scores(data)?;
+        let deltas = sum_delta_scores(data, self.num_players)?;
         Ok(vec![MjaiEvent::Ryukyoku { deltas }, MjaiEvent::EndKyoku])
     }
 
@@ -605,7 +621,7 @@ impl MajsoulBridge {
         let deltas = data
             .get("delta_scores")
             .and_then(JsonValue::as_array)
-            .map(parse_deltas)
+            .map(|a| parse_deltas(a))
             .transpose()?;
 
         let mut events = Vec::with_capacity(hules.len() + 1);
@@ -644,7 +660,7 @@ impl MajsoulBridge {
             events.push(MjaiEvent::Hora {
                 actor,
                 target,
-                deltas,
+                deltas: deltas.clone(),
                 ura_markers,
             });
         }
@@ -654,7 +670,14 @@ impl MajsoulBridge {
 
     /// `ActionLiuJu` (途中流局, abortive draw) → `[ryukyoku, end_kyoku]`
     /// without deltas. Covers 九種九牌 / 四風連打 / 四家立直 / 四開槓 /
-    /// 三家和了 — none of which redistribute points, so `deltas = None`.
+    /// 三家和了 (4p) and 九種九牌 / 四開槓 (3p — sufuurenta and suucha
+    /// riichi need 4 players and don't apply to sanma).
+    ///
+    /// The proto carries `ActionLiuJu.type: uint32` for the abortive cause
+    /// but no enum exists in `liqi.proto`. Both Akagi-Python and AkagiNG
+    /// ignore the field entirely and emit a generic ryukyoku. We follow
+    /// suit until real captures of each type value arrive — at that point
+    /// we can surface a `reason` field on `MjaiEvent::Ryukyoku`.
     fn build_liu_ju(&mut self, _data: &JsonValue) -> Result<Vec<MjaiEvent>> {
         Ok(vec![
             MjaiEvent::Ryukyoku { deltas: None },
@@ -716,12 +739,9 @@ impl MajsoulBridge {
             .collect::<Result<Vec<_>>>()?;
 
         let oya = ju;
-        let mut tehais: [[String; 13]; 4] = Default::default();
-        for row in tehais.iter_mut() {
-            for cell in row.iter_mut() {
-                *cell = UNKNOWN_TILE.into();
-            }
-        }
+        let n = self.num_players as usize;
+        let mut tehais: Vec<Vec<String>> =
+            (0..n).map(|_| vec![UNKNOWN_TILE.to_string(); TEHAI_SIZE]).collect();
 
         let tsumo_event = match my_tiles.len() {
             TEHAI_SIZE => {
@@ -779,9 +799,49 @@ impl MajsoulBridge {
                 oya,
                 scores,
                 tehais,
+                num_players: self.num_players,
             },
             tsumo_event,
         ])
+    }
+
+    /// `ActionBaBei` (3p 北抜き / nukidora) → mjai `kita`.
+    ///
+    /// Captured Majsoul payload (3p AI room, 2026-04-29):
+    ///
+    /// ```json
+    /// {"data":{"doras":[],"moqie":false,"seat":0,"tile_state":0,
+    ///          "tingpais":[],"zhenting":false},
+    ///  "name":"ActionBaBei","step":2}
+    /// ```
+    ///
+    /// Notes:
+    /// - No `tile` field — kita is always the North tile, so we hardcode
+    ///   `pai = "N"` per `reference/reference_mjai_3p.md`.
+    /// - `doras: []` — kita does NOT flip a new dora indicator (Tenhou
+    ///   rule, confirmed live). Skip dora bookkeeping entirely.
+    /// - `last_revealed_tile_actor` is updated so a follow-up ron-on-kita
+    ///   (chankan-style) gets the correct `target` in `build_hule`.
+    ///
+    /// Outside 3p tables Majsoul should never emit this; if it does, log
+    /// a warning but still emit so the data isn't silently lost.
+    fn build_kita(&mut self, data: &JsonValue) -> Result<Vec<MjaiEvent>> {
+        let actor = data
+            .get("seat")
+            .and_then(JsonValue::as_u64)
+            .context("ActionBaBei missing seat")? as Actor;
+        if self.num_players != 3 {
+            warn!(
+                target: "akagi::bridge::majsoul",
+                "ActionBaBei received in {}p flow (expected 3p): {data}",
+                self.num_players
+            );
+        }
+        self.last_revealed_tile_actor = Some(actor);
+        Ok(vec![MjaiEvent::Kita {
+            actor,
+            pai: Some("N".to_string()),
+        }])
     }
 
     fn handle_auth_game_response(&mut self, payload: &JsonValue) -> Vec<MjaiEvent> {
@@ -811,89 +871,104 @@ impl MajsoulBridge {
         };
         let seat = seat as Actor;
         self.seat = Some(seat);
+        // 3p tables produce length-3 seat_list; 4p length-4. Anything else
+        // would be a protocol surprise — clamp into [3, 4] but log loudly.
+        let detected = seat_list.len() as u8;
+        if detected != 3 && detected != 4 {
+            warn!(
+                target: "akagi::bridge::majsoul",
+                "unexpected seat_list length {detected}; defaulting num_players=4"
+            );
+            self.num_players = 4;
+        } else {
+            self.num_players = detected;
+        }
+        let mode_id = payload
+            .pointer("/game_config/meta/mode_id")
+            .and_then(JsonValue::as_u64);
         let names = names_from_payload(payload, seat_list);
         info!(
             target: "akagi::bridge::majsoul",
-            "seat resolved: account_id={account_id} seat={seat} names={names:?}"
+            "seat resolved: account_id={account_id} seat={seat} num_players={np} mode_id={mode_id:?} names={names:?}",
+            np = self.num_players,
         );
         vec![MjaiEvent::StartGame {
             names,
             kyoku_first: None,
             aka_flag: None,
             id: Some(seat),
+            num_players: self.num_players,
         }]
     }
 }
 
-/// Parse `data.scores` into a 4-int array. 3p tables produce a 3-element
-/// list; the 4th slot is padded with 0 to satisfy the mjai 4-seat schema.
-fn parse_scores(data: &JsonValue) -> Result<[i32; 4]> {
+/// Parse `data.scores` into a `Vec<i32>` of native length (3 for sanma, 4 for
+/// yonma). No padding — the wire format reflects the table's actual seat count.
+fn parse_scores(data: &JsonValue) -> Result<Vec<i32>> {
     let arr = data
         .get("scores")
         .and_then(JsonValue::as_array)
         .context("ActionNewRound missing scores")?;
-    let mut out = [0i32; 4];
-    for (i, v) in arr.iter().take(4).enumerate() {
-        out[i] = v
-            .as_i64()
-            .context("non-integer score")?
-            .try_into()
-            .context("score out of i32 range")?;
-    }
-    Ok(out)
+    arr.iter()
+        .map(|v| {
+            v.as_i64()
+                .context("non-integer score")?
+                .try_into()
+                .context("score out of i32 range")
+        })
+        .collect()
 }
 
-/// Place a 13-tile row into `tehais[seat]`. Errors if `seat >= 4` or the row
-/// isn't exactly 13 tiles long.
-fn fill_seat_row(tehais: &mut [[String; 13]; 4], seat: Actor, row: Vec<String>) -> Result<()> {
+/// Place a 13-tile row into `tehais[seat]`. Errors if `seat` is out of range
+/// for the supplied tehais Vec or the row isn't exactly 13 tiles long.
+fn fill_seat_row(tehais: &mut [Vec<String>], seat: Actor, row: Vec<String>) -> Result<()> {
     if (seat as usize) >= tehais.len() {
         bail!("seat {seat} out of range");
     }
     if row.len() != TEHAI_SIZE {
         bail!("expected {TEHAI_SIZE} tiles for seat row, got {}", row.len());
     }
-    for (slot, tile) in tehais[seat as usize].iter_mut().zip(row.into_iter()) {
-        *slot = tile;
-    }
+    tehais[seat as usize] = row;
     Ok(())
 }
 
-/// Parse a JSON array of integers into `[i32; 4]`. 3p arrays of length 3
-/// are padded with a trailing 0; longer-than-4 arrays are truncated.
-fn parse_deltas(arr: &Vec<JsonValue>) -> Result<[i32; 4]> {
-    let mut out = [0i32; 4];
-    for (i, v) in arr.iter().take(4).enumerate() {
-        out[i] = v
-            .as_i64()
-            .context("delta_scores entry not an integer")?
-            .try_into()
-            .context("delta_scores entry out of i32 range")?;
-    }
-    Ok(out)
+/// Parse a JSON array of integers into `Vec<i32>` of native length.
+fn parse_deltas(arr: &[JsonValue]) -> Result<Vec<i32>> {
+    arr.iter()
+        .map(|v| {
+            v.as_i64()
+                .context("delta_scores entry not an integer")?
+                .try_into()
+                .context("delta_scores entry out of i32 range")
+        })
+        .collect()
 }
 
 /// Sum every `delta_scores` array under `data.scores[]` into a single
-/// `[i32; 4]`. Returns `None` when no entries are present (no point change
-/// — kept distinguishable from an explicit all-zero delta). 3p deltas of
-/// length 3 are padded with a trailing 0.
-fn sum_delta_scores(data: &JsonValue) -> Result<Option<[i32; 4]>> {
+/// `Vec<i32>` sized to `num_players`. Returns `None` when no entries are
+/// present (no point change — kept distinguishable from an explicit all-zero
+/// delta). Each entry's length is expected to match `num_players`; entries
+/// shorter than that are zero-extended (defensive — Majsoul should always
+/// emit the right length).
+fn sum_delta_scores(data: &JsonValue, num_players: u8) -> Result<Option<Vec<i32>>> {
     let arr = match data.get("scores").and_then(JsonValue::as_array) {
         Some(a) if !a.is_empty() => a,
         _ => return Ok(None),
     };
-    let mut total = [0i32; 4];
+    let n = num_players as usize;
+    let mut total = vec![0i32; n];
     for entry in arr {
         let deltas = match entry.get("delta_scores").and_then(JsonValue::as_array) {
             Some(d) => d,
             None => continue,
         };
-        for (i, v) in deltas.iter().take(4).enumerate() {
-            let n: i32 = v
+        for (i, v) in deltas.iter().take(n).enumerate() {
+            let val: i32 = v
                 .as_i64()
                 .context("non-integer delta_scores entry")?
                 .try_into()
                 .context("delta_scores out of i32 range")?;
-            total[i] = total[i].saturating_add(n);
+            total[i] = total[i].saturating_add(val);
         }
     }
     Ok(Some(total))
@@ -931,9 +1006,9 @@ fn pai_has_red_form(pai: &str) -> bool {
 
 /// Resolve seat → display name via `payload.players[]` (account_id → nickname).
 /// Robot seats are absent from `players` (they live under `robots[]` without
-/// a nickname), so they get an empty string. 3p `seat_list` of length 3 is
-/// padded with empty strings to fit the mjai 4-name array.
-fn names_from_payload(payload: &JsonValue, seat_list: &[JsonValue]) -> [String; 4] {
+/// a nickname), so they get an empty string. Returned `Vec` length matches
+/// `seat_list.len()` (3 for sanma, 4 for yonma).
+fn names_from_payload(payload: &JsonValue, seat_list: &[JsonValue]) -> Vec<String> {
     let mut nick: HashMap<u64, String> = HashMap::new();
     if let Some(players) = payload.get("players").and_then(JsonValue::as_array) {
         for p in players {
@@ -945,15 +1020,14 @@ fn names_from_payload(payload: &JsonValue, seat_list: &[JsonValue]) -> [String; 
             }
         }
     }
-    let mut names: [String; 4] = Default::default();
-    for (i, v) in seat_list.iter().take(4).enumerate() {
-        if let Some(id) = v.as_u64() {
-            if let Some(name) = nick.get(&id) {
-                names[i] = name.clone();
-            }
-        }
-    }
-    names
+    seat_list
+        .iter()
+        .map(|v| {
+            v.as_u64()
+                .and_then(|id| nick.get(&id).cloned())
+                .unwrap_or_default()
+        })
+        .collect()
 }
 
 impl Default for MajsoulBridge {
@@ -1081,15 +1155,22 @@ mod tests {
         assert_eq!(bridge.seat, Some(2));
         assert_eq!(events.len(), 1);
         match &events[0] {
-            MjaiEvent::StartGame { id, names, .. } => {
+            MjaiEvent::StartGame {
+                id,
+                names,
+                num_players,
+                ..
+            } => {
                 assert_eq!(*id, Some(2));
+                assert_eq!(*num_players, 4);
                 assert_eq!(
                     names,
-                    &["".to_string(), "".to_string(), "player_a".to_string(), "".to_string()]
+                    &vec!["".to_string(), "".to_string(), "player_a".to_string(), "".to_string()]
                 );
             }
             other => panic!("expected StartGame, got {other:?}"),
         }
+        assert_eq!(bridge.num_players, 4);
     }
 
     #[test]
@@ -1111,14 +1192,65 @@ mod tests {
         match &events[0] {
             MjaiEvent::StartGame { id, names, .. } => {
                 assert_eq!(*id, Some(1));
-                assert_eq!(names, &["bob", "alice", "dave", "carol"].map(String::from));
+                assert_eq!(
+                    names,
+                    &vec![
+                        "bob".to_string(),
+                        "alice".to_string(),
+                        "dave".to_string(),
+                        "carol".to_string(),
+                    ]
+                );
             }
             other => panic!("expected StartGame, got {other:?}"),
         }
     }
 
+    /// Real captured 3p authGame response (single human + 2 robots, AI casual
+    /// match `mode_id=0`). Verifies (a) num_players resolves to 3 from
+    /// `seat_list.len()`, (b) emitted names array is length 3 with the human
+    /// nickname at the right seat, (c) seat resolves to the human's index in
+    /// the seat_list. `mode_id=0` is normal for AI rooms (only ranked sanma
+    /// rooms use 21/22/26) — bridge logs it but doesn't gate on it.
     #[test]
-    fn three_player_seat_list_pads_with_empty_string() {
+    fn three_player_real_auth_game_payload() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.dispatch(&req(METHOD_AUTH_GAME, json!({ "account_id": 12345 })));
+        let events = bridge.dispatch(&resp(
+            METHOD_AUTH_GAME,
+            json!({
+                "game_config": {
+                    "category": 1,
+                    "meta": { "contest_uid": 0, "mode_id": 0, "room_id": 33123 },
+                    "mode": { "ai": true, "mode": 12 }
+                },
+                "players": [{ "account_id": 12345, "nickname": "player_a" }],
+                "robots": [
+                    { "account_id": 1, "nickname": "" },
+                    { "account_id": 2, "nickname": "" },
+                ],
+                "seat_list": [2u64, 12345u64, 1u64],
+            }),
+        ));
+        assert_eq!(bridge.seat, Some(1));
+        assert_eq!(bridge.num_players, 3);
+        match &events[0] {
+            MjaiEvent::StartGame { id, names, num_players, .. } => {
+                assert_eq!(*id, Some(1));
+                assert_eq!(*num_players, 3);
+                assert_eq!(
+                    names,
+                    &vec!["".to_string(), "player_a".to_string(), "".to_string()]
+                );
+            }
+            other => panic!("expected StartGame, got {other:?}"),
+        }
+    }
+
+    /// 3-player table: `seat_list` is length 3, names array stays length 3
+    /// (no padding to 4), and `num_players` is stamped on the StartGame event.
+    #[test]
+    fn three_player_seat_list_emits_length_three_names_and_num_players() {
         let mut bridge = MajsoulBridge::new(None, None);
         bridge.dispatch(&req(METHOD_AUTH_GAME, json!({ "account_id": 50 })));
         let events = bridge.dispatch(&resp(
@@ -1129,12 +1261,19 @@ mod tests {
             }),
         ));
         match &events[0] {
-            MjaiEvent::StartGame { id, names, .. } => {
+            MjaiEvent::StartGame {
+                id,
+                names,
+                num_players,
+                ..
+            } => {
                 assert_eq!(*id, Some(1));
-                assert_eq!(names, &["", "me", "", ""].map(String::from));
+                assert_eq!(*num_players, 3);
+                assert_eq!(names, &vec!["".to_string(), "me".to_string(), "".to_string()]);
             }
             other => panic!("expected StartGame, got {other:?}"),
         }
+        assert_eq!(bridge.num_players, 3);
     }
 
     #[test]
@@ -1289,6 +1428,7 @@ mod tests {
                 oya,
                 scores,
                 tehais,
+                num_players,
             } => {
                 assert_eq!(bakaze, "E");
                 assert_eq!(dora_marker, "4s");
@@ -1296,7 +1436,8 @@ mod tests {
                 assert_eq!(*honba, 0);
                 assert_eq!(*kyotaku, 0);
                 assert_eq!(*oya, 0);
-                assert_eq!(scores, &[25000, 25000, 25000, 25000]);
+                assert_eq!(*num_players, 4);
+                assert_eq!(scores, &vec![25000, 25000, 25000, 25000]);
                 // Other seats stay unknown.
                 for s in [0, 1, 3] {
                     assert!(tehais[s].iter().all(|t| t == "?"));
@@ -1304,10 +1445,12 @@ mod tests {
                 // Our row: 13 tiles, sorted, mapped (0s → 5sr, 2z → S, 7z → C).
                 assert_eq!(
                     tehais[2],
-                    [
+                    vec![
                         "2m", "5m", "7m", "8m", "3p", "6p", "7p", "1s", "3s", "5sr", "6s", "S", "C",
                     ]
+                    .into_iter()
                     .map(String::from)
+                    .collect::<Vec<_>>()
                 );
             }
             other => panic!("expected StartKyoku, got {other:?}"),
@@ -1397,30 +1540,117 @@ mod tests {
                 assert_eq!(*oya, 2);
                 assert_eq!(*honba, 3);
                 assert_eq!(*kyotaku, 1);
-                assert_eq!(scores, &[24000, 26000, 25000, 25000]);
+                assert_eq!(scores, &vec![24000, 26000, 25000, 25000]);
             }
             other => panic!("expected StartKyoku, got {other:?}"),
         }
     }
 
-    /// Three-player table: scores arrive as 3 ints, the 4th slot must be
-    /// padded with 0 to satisfy the mjai 4-seat schema.
+    /// Real captured 3p `ActionNewRound` payload (East 1, honba 1, dealer at
+    /// seat 0 = user). Confirms the bridge handles a real 3p deal end-to-end:
+    /// length-3 scores, length-3 tehais, dealer's 14th tile becomes opening
+    /// tsumo. dora_marker `4z` → `N`. `left_tile_count` 54 = 108 − 14 dead
+    /// wall − 13×3 dealt − 1 dealer's first draw.
     #[test]
-    fn action_new_round_pads_three_player_scores() {
+    fn action_new_round_three_player_real_payload() {
         let mut bridge = MajsoulBridge::new(None, None);
         bridge.seat = Some(0);
+        bridge.num_players = 3;
+        let msg = new_round_msg(json!({
+            "al": false,
+            "ben": 1,
+            "chang": 0,
+            "doras": ["4z"],
+            "ju": 0,
+            "left_tile_count": 54,
+            "liqibang": 0,
+            "scores": [37000, 34000, 34000],
+            "tiles": ["7s","9m","6s","8s","1m","6p","9s","1p","5z","9s","8s","2s","4p","6p"],
+            "tingpais0": [],
+            "tingpais1": [],
+        }));
+        let events = bridge.dispatch(&msg);
+        assert_eq!(events.len(), 2);
+        match &events[0] {
+            MjaiEvent::StartKyoku {
+                bakaze,
+                dora_marker,
+                kyoku,
+                honba,
+                kyotaku,
+                oya,
+                scores,
+                tehais,
+                num_players,
+            } => {
+                assert_eq!(bakaze, "E");
+                assert_eq!(dora_marker, "N");
+                assert_eq!(*kyoku, 1);
+                assert_eq!(*honba, 1);
+                assert_eq!(*kyotaku, 0);
+                assert_eq!(*oya, 0);
+                assert_eq!(*num_players, 3);
+                assert_eq!(scores, &vec![37000, 34000, 34000]);
+                assert_eq!(tehais.len(), 3, "no phantom 4th seat");
+                // Dealer's 13 tiles, sorted, mapped (5z → P). Note the
+                // captured payload has TWO 6p (index 5 in tehai and index
+                // 13 = opening tsumo), so the sorted tehai has one 6p, two
+                // 8s and two 9s.
+                assert_eq!(
+                    tehais[0],
+                    vec![
+                        "1m", "9m", "1p", "4p", "6p", "2s", "6s", "7s", "8s", "8s", "9s", "9s", "P",
+                    ]
+                    .into_iter()
+                    .map(String::from)
+                    .collect::<Vec<_>>()
+                );
+                for s in [1, 2] {
+                    assert!(tehais[s].iter().all(|t| t == "?"));
+                }
+            }
+            other => panic!("expected StartKyoku, got {other:?}"),
+        }
+        match &events[1] {
+            MjaiEvent::Tsumo { actor, pai } => {
+                assert_eq!(*actor, 0);
+                // 14th tile in payload (6p) is the dealer's opening tsumo.
+                assert_eq!(pai, "6p");
+            }
+            other => panic!("expected Tsumo, got {other:?}"),
+        }
+    }
+
+    /// Synthetic 3p table: native-length scores/tehais (no padding), with the
+    /// user as dealer. Slimmer fixture than the real-payload test above.
+    #[test]
+    fn action_new_round_three_player_emits_native_length() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.seat = Some(0);
+        bridge.num_players = 3;
         let msg = new_round_msg(json!({
             "doras": ["1m"],
             "scores": [35000, 35000, 35000],
             "tiles": [
-                "1m","2m","3m","4m","5m","6m","7m","8m","9m",
-                "1p","2p","3p","4p","0p"
+                "1m","9m",
+                "1p","2p","3p","4p","5p","6p","7p","8p","9p",
+                "1s","2s","3s"
             ],
         }));
         let events = bridge.dispatch(&msg);
         match &events[0] {
-            MjaiEvent::StartKyoku { scores, .. } => {
-                assert_eq!(scores, &[35000, 35000, 35000, 0]);
+            MjaiEvent::StartKyoku {
+                scores,
+                tehais,
+                num_players,
+                ..
+            } => {
+                assert_eq!(*num_players, 3);
+                assert_eq!(scores, &vec![35000, 35000, 35000]);
+                assert_eq!(tehais.len(), 3, "no phantom 4th seat");
+                for hand in tehais {
+                    assert_eq!(hand.len(), 13);
+                }
             }
             other => panic!("expected StartKyoku, got {other:?}"),
         }
@@ -1684,6 +1914,118 @@ mod tests {
             }
             other => panic!("expected Chi, got {other:?}"),
         }
+    }
+
+    /// 3p tables must never see a chi event. If Majsoul somehow sends one,
+    /// drop it with a warning rather than propagating malformed mjai.
+    #[test]
+    fn action_chi_peng_gang_chi_dropped_in_three_player() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.seat = Some(1);
+        bridge.num_players = 3;
+        let msg = action_msg(
+            ACTION_CHI_PENG_GANG,
+            json!({
+                "seat": 1,
+                "type": 0,
+                "tiles": ["3m", "4m", "5m"],
+                "froms": [0, 1, 1],
+            }),
+        );
+        let events = bridge.dispatch(&msg);
+        assert!(events.is_empty(), "chi must be dropped in 3p");
+    }
+
+    /// `ActionBaBei` (3p kita) → mjai `kita` event with hardcoded `pai = "N"`
+    /// (Majsoul omits the tile field; kita is always the North tile).
+    /// Real payload captured from a live 3p AI match.
+    #[test]
+    fn action_ba_bei_emits_kita_event() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.seat = Some(1);
+        bridge.num_players = 3;
+        let events = bridge.dispatch(&action_msg(
+            ACTION_BA_BEI,
+            json!({
+                "doras": [],
+                "moqie": false,
+                "seat": 0,
+                "tile_state": 0,
+                "tingpais": [],
+                "zhenting": false,
+            }),
+        ));
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            MjaiEvent::Kita { actor, pai } => {
+                assert_eq!(*actor, 0);
+                assert_eq!(pai.as_deref(), Some("N"));
+            }
+            other => panic!("expected Kita, got {other:?}"),
+        }
+    }
+
+    /// Kita updates `last_revealed_tile_actor` so a ron on the abstained
+    /// north tile (chankan-style search-the-kita) targets the abstainer in
+    /// the subsequent `ActionHule`.
+    #[test]
+    fn action_ba_bei_updates_last_revealed_tile_actor() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.seat = Some(2);
+        bridge.num_players = 3;
+        bridge.last_revealed_tile_actor = Some(99); // garbage to be overwritten
+        bridge.dispatch(&action_msg(
+            ACTION_BA_BEI,
+            json!({ "seat": 0, "moqie": false, "doras": [], "tingpais": [], "zhenting": false, "tile_state": 0 }),
+        ));
+        assert_eq!(bridge.last_revealed_tile_actor, Some(0));
+    }
+
+    /// Kita does NOT flip a new dora marker (Tenhou rule). The bridge's
+    /// dora bookkeeping must stay untouched after a kita event.
+    #[test]
+    fn action_ba_bei_does_not_change_dora_state() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.seat = Some(0);
+        bridge.num_players = 3;
+        bridge.doras = vec!["E".to_string()];
+        bridge.dispatch(&action_msg(
+            ACTION_BA_BEI,
+            json!({ "seat": 1, "moqie": false, "doras": [], "tingpais": [], "zhenting": false, "tile_state": 0 }),
+        ));
+        assert_eq!(bridge.doras, vec!["E".to_string()]);
+        assert!(bridge.dora_timing.is_none());
+        assert!(bridge.deferred_dora.is_none());
+    }
+
+    /// Riichi declaration tile passes through normally, then a kita
+    /// happens. `reach_accepted` must be drained before the kita event
+    /// (mjai state machine: declaration tile must pass through before any
+    /// non-Hule action).
+    #[test]
+    fn action_ba_bei_drains_pending_reach_accepted() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.seat = Some(0);
+        bridge.num_players = 3;
+        bridge.dispatch(&action_msg(
+            ACTION_DISCARD_TILE,
+            json!({ "seat": 1, "tile": "5p", "is_liqi": true }),
+        ));
+        assert_eq!(bridge.pending_reach_accepted, Some(1));
+        let events = bridge.dispatch(&action_msg(
+            ACTION_BA_BEI,
+            json!({ "seat": 2, "moqie": false, "doras": [], "tingpais": [], "zhenting": false, "tile_state": 0 }),
+        ));
+        assert_eq!(events.len(), 2);
+        match &events[0] {
+            MjaiEvent::ReachAccepted { actor } => assert_eq!(*actor, 1),
+            other => panic!("expected ReachAccepted first, got {other:?}"),
+        }
+        match &events[1] {
+            MjaiEvent::Kita { actor, .. } => assert_eq!(*actor, 2),
+            other => panic!("expected Kita second, got {other:?}"),
+        }
+        assert!(bridge.pending_reach_accepted.is_none());
     }
 
     /// Daiminkan schedules dora 後乗り — flag must be set.
@@ -2003,7 +2345,7 @@ mod tests {
         assert_eq!(events.len(), 2);
         match &events[0] {
             MjaiEvent::Ryukyoku { deltas } => {
-                assert_eq!(*deltas, Some([3000, -1000, -1000, -1000]));
+                assert_eq!(*deltas, Some(vec![3000, -1000, -1000, -1000]));
             }
             other => panic!("expected Ryukyoku first, got {other:?}"),
         }
@@ -2027,17 +2369,64 @@ mod tests {
         ));
         match &events[0] {
             MjaiEvent::Ryukyoku { deltas } => {
-                assert_eq!(*deltas, Some([1500, 1000, -1000, -1500]));
+                assert_eq!(*deltas, Some(vec![1500, 1000, -1000, -1500]));
             }
             other => panic!("expected Ryukyoku, got {other:?}"),
         }
     }
 
-    /// 3p ryukyoku: `delta_scores` arrives with 3 entries; pad to 4 with 0.
+    /// Real captured 3p `ActionNoTile` payload (1 tenpai / 2 noten).
+    /// `delta_scores: [2000, -1000, -1000]` → length-3 deltas, no padding.
+    /// Tenpai pool 2000 split per `reference/reference_mjai_3p.md`.
     #[test]
-    fn action_no_tile_pads_three_player_deltas() {
+    fn action_no_tile_three_player_real_payload() {
         let mut bridge = MajsoulBridge::new(None, None);
         bridge.seat = Some(0);
+        bridge.num_players = 3;
+        let events = bridge.dispatch(&action_msg(
+            ACTION_NO_TILE,
+            json!({
+                "gameend": false,
+                "hules_history": [],
+                "liujumanguan": false,
+                "players": [
+                    {
+                        "already_hule": false,
+                        "hand": ["2p","2p","2p","5p","6p","7p","8p","9p","4s","0s","6s","8s","8s"],
+                        "tingpai": true,
+                        "tings": [
+                            { "tile": "7p", "fu": 40, "fu_zimo": 30 },
+                            { "tile": "4p", "fu": 40, "fu_zimo": 30 },
+                        ],
+                    },
+                    { "already_hule": false, "hand": [], "tingpai": false, "tings": [] },
+                    { "already_hule": false, "hand": [], "tingpai": false, "tings": [] },
+                ],
+                "scores": [{
+                    "delta_scores": [2000, -1000, -1000],
+                    "doras": [],
+                    "old_scores": [35000, 35000, 35000],
+                    "seat": 0,
+                }],
+            }),
+        ));
+        assert_eq!(events.len(), 2);
+        match &events[0] {
+            MjaiEvent::Ryukyoku { deltas } => {
+                assert_eq!(*deltas, Some(vec![2000, -1000, -1000]));
+            }
+            other => panic!("expected Ryukyoku, got {other:?}"),
+        }
+        assert!(matches!(events[1], MjaiEvent::EndKyoku));
+    }
+
+    /// 3p ryukyoku: `delta_scores` arrives with 3 entries; emitted mjai
+    /// `deltas` keeps native length 3 (no padding).
+    #[test]
+    fn action_no_tile_three_player_deltas_native_length() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.seat = Some(0);
+        bridge.num_players = 3;
         let events = bridge.dispatch(&action_msg(
             ACTION_NO_TILE,
             json!({
@@ -2046,7 +2435,7 @@ mod tests {
         ));
         match &events[0] {
             MjaiEvent::Ryukyoku { deltas } => {
-                assert_eq!(*deltas, Some([2000, -1000, -1000, 0]));
+                assert_eq!(*deltas, Some(vec![2000, -1000, -1000]));
             }
             other => panic!("expected Ryukyoku, got {other:?}"),
         }
@@ -2141,7 +2530,7 @@ mod tests {
             MjaiEvent::Hora { actor, target, deltas, ura_markers } => {
                 assert_eq!(*actor, 3);
                 assert_eq!(*target, 2);
-                assert_eq!(*deltas, Some([0, 0, -2000, 2000]));
+                assert_eq!(*deltas, Some(vec![0, 0, -2000, 2000]));
                 assert!(ura_markers.is_none(), "no riichi → no ura_markers");
             }
             other => panic!("expected Hora first, got {other:?}"),
@@ -2166,7 +2555,7 @@ mod tests {
             MjaiEvent::Hora { actor, target, deltas, ura_markers } => {
                 assert_eq!(*actor, 0);
                 assert_eq!(*target, 0);
-                assert_eq!(*deltas, Some([4000, -2000, -1000, -1000]));
+                assert_eq!(*deltas, Some(vec![4000, -2000, -1000, -1000]));
                 assert!(ura_markers.is_none());
             }
             other => panic!("expected Hora, got {other:?}"),
@@ -2383,6 +2772,121 @@ mod tests {
             MjaiEvent::Hora { actor, target, .. } => {
                 assert_eq!(*actor, 0);
                 assert_eq!(*target, 2, "kokushi rob ankan: target = ankan declarer");
+            }
+            other => panic!("expected Hora, got {other:?}"),
+        }
+    }
+
+    /// Real captured 3p `ActionHule` payload: seat 2 rons off seat 0
+    /// (riichi+haitei, dama with ura). `delta_scores: [-12000, 0, 13000]`
+    /// length 3, with the +1000 honba/riichi-stick bundled into the winner's
+    /// 13000. Verifies length-3 deltas, ura markers from `li_doras`.
+    #[test]
+    fn action_hule_three_player_real_ron_payload() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.seat = Some(0);
+        bridge.num_players = 3;
+        // Seat 0 just discarded — sets last_revealed_tile_actor for the ron target.
+        bridge.dispatch(&action_msg(
+            ACTION_DISCARD_TILE,
+            json!({ "seat": 0, "tile": "3s", "moqie": false }),
+        ));
+        let events = bridge.dispatch(&action_msg(
+            ACTION_HULE,
+            json!({
+                "baopai": 0,
+                "delta_scores": [-12000, 0, 13000],
+                "doras": [],
+                "old_scores": [35000, 35000, 34000],
+                "scores": [23000, 35000, 47000],
+                "wait_timeout": 0,
+                "hules": [{
+                    "baida_changed": [],
+                    "baopai": 0,
+                    "baopai_seats": [],
+                    "count": 7,
+                    "dadian": 12000,
+                    "doras": ["6s"],
+                    "fans": [
+                        { "id": 25, "val": 2 },
+                        { "id": 2,  "val": 1 },
+                        { "id": 33, "val": 2 },
+                        { "id": 34, "val": 2 },
+                    ],
+                    "fu": 25,
+                    "hand": ["9m","9m","3p","3p","6p","6p","2s","2s","3s","5s","5s","9s","9s"],
+                    "hu_tile": "3s",
+                    "hu_tile_bai_da_changed": "",
+                    "li_doras": ["5p"],
+                    "lines": [],
+                    "liqi": true,
+                    "ming": [],
+                    "point_rong": 12000,
+                    "point_sum": 12000,
+                    "qinjia": false,
+                    "seat": 2,
+                    "yiman": false,
+                    "zimo": false,
+                }],
+            }),
+        ));
+        assert_eq!(events.len(), 2);
+        match &events[0] {
+            MjaiEvent::Hora { actor, target, deltas, ura_markers } => {
+                assert_eq!(*actor, 2);
+                assert_eq!(*target, 0);
+                assert_eq!(*deltas, Some(vec![-12000, 0, 13000]));
+                assert_eq!(ura_markers.as_deref(), Some(&["5p".to_string()][..]));
+            }
+            other => panic!("expected Hora, got {other:?}"),
+        }
+        assert!(matches!(events[1], MjaiEvent::EndKyoku));
+    }
+
+    /// **Ron on kita (搶北)** — Majsoul wire format: `ActionBaBei` followed
+    /// by `ActionHule` with `hu_tile: "4z"`, `zimo: false`. The ron's
+    /// `target` must attribute to the kita declarer (whoever set aside the
+    /// north tile), not whoever discarded last.
+    ///
+    /// Confirmed against Akagi-Python and AkagiNG: no separate
+    /// "kita_chankan" message exists; the hule arrives in the normal
+    /// `ActionHule` slot. `build_kita` sets `last_revealed_tile_actor` so
+    /// `build_hule` picks up the kita declarer as `target` automatically.
+    /// `chankan` yaku is NOT awarded on ron-on-kita (Tenhou rule), but that
+    /// distinction is the bot's concern — the bridge just emits the events.
+    #[test]
+    fn ron_on_kita_targets_kita_declarer() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.seat = Some(2); // observer is the ronner
+        bridge.num_players = 3;
+        // Earlier in the round seat 1 had discarded — must NOT be the ron target.
+        bridge.dispatch(&action_msg(
+            ACTION_DISCARD_TILE,
+            json!({ "seat": 1, "tile": "5p", "moqie": false }),
+        ));
+        // Seat 0 declares kita.
+        bridge.dispatch(&action_msg(
+            ACTION_BA_BEI,
+            json!({ "seat": 0, "moqie": false, "doras": [], "tingpais": [], "zhenting": false, "tile_state": 0 }),
+        ));
+        assert_eq!(bridge.last_revealed_tile_actor, Some(0));
+        // Seat 2 rons the kita tile (hu_tile = 4z = N).
+        let events = bridge.dispatch(&action_msg(
+            ACTION_HULE,
+            json!({
+                "delta_scores": [-8000, 0, 8000],
+                "hules": [{
+                    "seat": 2,
+                    "zimo": false,
+                    "liqi": false,
+                    "hu_tile": "4z",
+                }],
+            }),
+        ));
+        match &events[0] {
+            MjaiEvent::Hora { actor, target, .. } => {
+                assert_eq!(*actor, 2);
+                assert_eq!(*target, 0, "ron-on-kita target = kita declarer");
             }
             other => panic!("expected Hora, got {other:?}"),
         }

@@ -29,7 +29,7 @@ mjai_bot/*/settings.toml
 gen/
 
 # util
-mjai_bot/mortal
+mjai_bot/mortal*
 
 # Locally-built bot release artifacts
 mortal.zip

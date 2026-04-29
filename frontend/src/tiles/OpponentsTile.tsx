@@ -20,6 +20,7 @@ const NO_OPPONENTS: readonly OpponentRisk[] = []
 export function OpponentsTile({ bp }: { bp: Breakpoint }) {
   const opponents = useAnalysisStore((s) => s.result?.opponents ?? NO_OPPONENTS)
   const ourSeat = useGameStore((s) => s.game?.our_seat ?? null)
+  const numPlayers = useGameStore((s) => s.game?.num_players ?? 4)
 
   return (
     <TileFrame id="opponents" title="Opponents" bp={bp} contentClassName="p-0">
@@ -40,7 +41,7 @@ export function OpponentsTile({ bp }: { bp: Breakpoint }) {
               const maxRisk = o.risk.length ? Math.max(...o.risk) : 0
               return (
                 <TableRow key={o.seat}>
-                  <TableCell className="font-mono">{seatLabel(o.seat, ourSeat)}</TableCell>
+                  <TableCell className="font-mono">{seatLabel(o.seat, ourSeat, numPlayers)}</TableCell>
                   <TableCell className="font-mono">{pct(o.tenpai_rate)}</TableCell>
                   <TableCell>{o.is_riichi ? '●' : '—'}</TableCell>
                   <TableCell className="font-mono text-right">{pct(maxRisk)}</TableCell>
@@ -54,8 +55,13 @@ export function OpponentsTile({ bp }: { bp: Breakpoint }) {
   )
 }
 
-function seatLabel(seat: number, ourSeat: number | null): string {
+function seatLabel(seat: number, ourSeat: number | null, numPlayers: number): string {
   if (ourSeat == null) return String(seat)
-  const d = (seat - ourSeat + 4) % 4
+  const n = Math.max(1, numPlayers)
+  const d = (seat - ourSeat + n) % n
+  if (n === 3) {
+    // 3p: only kamicha (上) and shimocha (下) — no toimen (対).
+    return d === 0 ? '自' : d === 1 ? '下' : '上'
+  }
   return d === 1 ? '下' : d === 2 ? '対' : d === 3 ? '上' : '自'
 }

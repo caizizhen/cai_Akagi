@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Responsive,
   useContainerWidth,
@@ -12,6 +12,7 @@ import 'react-resizable/css/styles.css'
 
 import { Button } from '@/components/ui/button'
 import { useLayoutStore, visibleTilesFor } from '@/stores/layoutStore'
+import { useNumPlayers } from '@/stores/gameStore'
 import {
   BREAKPOINTS,
   COLS,
@@ -24,12 +25,20 @@ import { AddTileMenu } from '@/components/AddTileMenu'
 export function GameDashboard() {
   const layouts = useLayoutStore((s) => s.layouts)
   const hidden = useLayoutStore((s) => s.hidden)
+  const mode = useLayoutStore((s) => s.mode)
   const setLayouts = useLayoutStore((s) => s.setLayouts)
+  const setMode = useLayoutStore((s) => s.setMode)
   const reset = useLayoutStore((s) => s.reset)
+  const numPlayers = useNumPlayers()
   const { width, containerRef, mounted } = useContainerWidth()
 
+  // Sync layout mode with active game's player count.
+  useEffect(() => {
+    setMode(numPlayers === 3 ? '3p' : '4p')
+  }, [numPlayers, setMode])
+
   const [bp, setBp] = useState<Breakpoint>('lg')
-  const visibleIds = visibleTilesFor(bp, hidden)
+  const visibleIds = visibleTilesFor(bp, hidden, mode)
 
   // RGL filters layouts to only visible items so missing entries don't crash.
   const filteredLayouts: ResponsiveLayouts = {

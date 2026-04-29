@@ -119,30 +119,30 @@ mod tests {
 
     fn start_game() -> MjaiEvent {
         MjaiEvent::StartGame {
-            names: ["a".into(), "b".into(), "c".into(), "d".into()],
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
             kyoku_first: None,
             aka_flag: None,
             id: Some(0),
+            num_players: 4,
         }
     }
 
     fn start_kyoku() -> MjaiEvent {
-        let one_hand: [String; 13] = std::array::from_fn(|i| match i {
-            0 => "1m".into(),
-            1 => "2m".into(),
-            2 => "3m".into(),
-            3 => "4m".into(),
-            4 => "5m".into(),
-            5 => "6m".into(),
-            6 => "7m".into(),
-            7 => "8m".into(),
-            8 => "9m".into(),
-            9 => "1p".into(),
-            10 => "2p".into(),
-            11 => "3p".into(),
-            12 => "1s".into(),
-            _ => "1m".into(),
-        });
+        let one_hand: Vec<String> = vec![
+            "1m".into(),
+            "2m".into(),
+            "3m".into(),
+            "4m".into(),
+            "5m".into(),
+            "6m".into(),
+            "7m".into(),
+            "8m".into(),
+            "9m".into(),
+            "1p".into(),
+            "2p".into(),
+            "3p".into(),
+            "1s".into(),
+        ];
         MjaiEvent::StartKyoku {
             bakaze: "E".into(),
             dora_marker: "9p".into(),
@@ -150,8 +150,9 @@ mod tests {
             honba: 0,
             kyotaku: 0,
             oya: 0,
-            scores: [25_000, 25_000, 25_000, 25_000],
-            tehais: std::array::from_fn(|_| one_hand.clone()),
+            scores: vec![25_000, 25_000, 25_000, 25_000],
+            tehais: vec![one_hand.clone(), one_hand.clone(), one_hand.clone(), one_hand],
+            num_players: 4,
         }
     }
 

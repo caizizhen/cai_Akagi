@@ -1,8 +1,8 @@
 // Mirrors backend schema. Source: frontend/README.md.
 
 export type MjaiEvent =
-  | { type: 'start_game'; names: [string, string, string, string]; kyoku_first?: number; aka_flag?: boolean; id?: number }
-  | { type: 'start_kyoku'; bakaze: string; dora_marker: string; kyoku: number; honba: number; kyotaku: number; oya: number; scores: [number, number, number, number]; tehais: [string[], string[], string[], string[]] }
+  | { type: 'start_game'; names: string[]; kyoku_first?: number; aka_flag?: boolean; id?: number; num_players?: number }
+  | { type: 'start_kyoku'; bakaze: string; dora_marker: string; kyoku: number; honba: number; kyotaku: number; oya: number; scores: number[]; tehais: string[][]; num_players?: number }
   | { type: 'tsumo'; actor: number; pai: string }
   | { type: 'dahai'; actor: number; pai: string; tsumogiri: boolean }
   | { type: 'chi'; actor: number; target: number; pai: string; consumed: [string, string] }
@@ -13,8 +13,9 @@ export type MjaiEvent =
   | { type: 'dora'; dora_marker: string }
   | { type: 'reach'; actor: number }
   | { type: 'reach_accepted'; actor: number }
-  | { type: 'hora'; actor: number; target: number; deltas?: [number, number, number, number]; ura_markers?: string[] }
-  | { type: 'ryukyoku'; deltas?: [number, number, number, number] }
+  | { type: 'hora'; actor: number; target: number; deltas?: number[]; ura_markers?: string[] }
+  | { type: 'ryukyoku'; deltas?: number[] }
+  | { type: 'kita'; actor: number; pai?: string }
   | { type: 'end_kyoku' }
   | { type: 'end_game' }
   | { type: 'none' }
@@ -47,7 +48,7 @@ export type AppConfig = {
   logging: { dir: string; level: string; all_level: string }
   platform: { kind: 'Majsoul' }
   proxy: { enabled: boolean; addr: string; ca_dir: string }
-  bot: { enabled: boolean; active: string; auto_sync: boolean; dir: string }
+  bot: { enabled: boolean; active_4p: string; active_3p: string; auto_sync: boolean; dir: string }
 }
 
 export type FieldKind = 'string' | 'bool' | 'int' | 'float' | 'enum'
@@ -66,7 +67,14 @@ export type FieldSpec = {
 
 export type Manifest = {
   manifest_version: number
-  bot: { name: string; display?: string; description?: string; version?: string }
+  bot: {
+    name: string
+    display?: string
+    description?: string
+    version?: string
+    /** Game modes this bot can play. Backend defaults to `["4p"]` when absent. */
+    supported_modes: string[]
+  }
   source?: { type: 'github_release'; repo: string; asset_glob?: string }
   settings: Record<string, FieldSpec>
 }
@@ -160,6 +168,8 @@ export type PlayerSnapshot = {
   riichi_stage: boolean
   double_riichi: boolean
   riichi_declaration_index: number | null
+  /** 3p only: north tiles set aside via kita / nukidora. Empty in 4p. */
+  kita_tiles: string[]
 }
 
 export type GameStateSnapshot = {
@@ -172,7 +182,10 @@ export type GameStateSnapshot = {
   turn_count: number
   phase: 'wait_act' | 'wait_response'
   is_done: boolean
-  players: [PlayerSnapshot, PlayerSnapshot, PlayerSnapshot, PlayerSnapshot]
+  /** 3 (sanma) or 4 (yonma). */
+  num_players: number
+  /** Length matches num_players. */
+  players: PlayerSnapshot[]
   dora_markers: string[]
   our_seat: number | null
 }
@@ -185,6 +198,9 @@ export type PlayerMahgenView = {
 }
 
 export type MahgenView = {
-  players: [PlayerMahgenView, PlayerMahgenView, PlayerMahgenView, PlayerMahgenView]
+  /** Length matches num_players. */
+  players: PlayerMahgenView[]
+  /** 3 (sanma) or 4 (yonma). */
+  num_players: number
   dora_indicators: string
 }

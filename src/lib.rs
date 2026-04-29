@@ -162,13 +162,16 @@ async fn spawn_bot_manager(
 ) -> anyhow::Result<()> {
     let bot_dir = util::resolve_dir(std::path::Path::new(&cfg.dir));
     let registry = bot::BotRegistry::scan(&bot_dir)?;
-    if registry.find(&cfg.active).is_none() {
-        warn!(
-            "configured bot {:?} not found under {}; available: {:?}",
-            cfg.active,
-            bot_dir.display(),
-            registry.names().collect::<Vec<_>>()
-        );
+    for (label, name) in [("4p", &cfg.active_4p), ("3p", &cfg.active_3p)] {
+        if !name.is_empty() && registry.find(name).is_none() {
+            warn!(
+                "configured {} bot {:?} not found under {}; available: {:?}",
+                label,
+                name,
+                bot_dir.display(),
+                registry.names().collect::<Vec<_>>()
+            );
+        }
     }
 
     let runtime = bot::PythonRuntime::locate(None)?;
@@ -182,7 +185,8 @@ async fn spawn_bot_manager(
     let manager = bot::BotManager::new(
         runtime,
         registry,
-        cfg.active,
+        cfg.active_4p,
+        cfg.active_3p,
         response_bus,
         status_bus,
         notify_bus,

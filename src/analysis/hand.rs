@@ -109,7 +109,10 @@ pub struct OpponentInfo {
 /// derives `left_tiles` (wall remainder) automatically when not provided.
 #[derive(Debug, Clone)]
 pub struct PlayerInfo34 {
-    /// Active seat (0..=3).
+    /// 3 (sanma) or 4 (yonma). Affects opponent count, tenpai-rate
+    /// approximation, and seat-wind modulus.
+    pub num_players: u8,
+    /// Active seat (0..=3 for 4p, 0..=2 for 3p).
     pub seat: u8,
     /// Closed hand counts (excludes melded tiles). Length-of-hand obeys
     /// `13 - 3*open_meld_count` for 13-tile state, +1 for 14-tile state.
@@ -210,6 +213,7 @@ pub struct PlayerInfo34Builder {
 impl Default for PlayerInfo34 {
     fn default() -> Self {
         PlayerInfo34 {
+            num_players: 4,
             seat: 0,
             hand: [0u8; TILE_COUNT],
             melds: Vec::new(),

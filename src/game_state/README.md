@@ -16,11 +16,19 @@ This module:
 1. Translates Akagi's own `schema::MjaiEvent` into the riichienv flavor
    (single field-level mismatch on `StartGame.id`, otherwise direct
    JSON round-trip — see `convert.rs`).
-2. Drives `GameState::apply_mjai_event` with the converted events.
+2. Drives **either** `GameState::apply_mjai_event` (4p) **or**
+   `GameState3P::apply_mjai_event` (3p sanma) with the converted events.
+   Both engines accept the same `riichienv_core::replay::MjaiEvent` enum
+   (which already includes the `Kita` variant), so the dispatch surface
+   is just a `match self.state` against `enum TrackedGame { Four, Three }`.
 3. Provides a `GameStateSnapshot` whose tiles are mjai strings and
    whose enums use snake-case discriminants — straight to the wire.
+   `players` is a `Vec<PlayerSnapshot>` of length `num_players`;
+   `PlayerSnapshot.kita_tiles` carries the 3p kita pool (empty in 4p).
 4. Wraps the score / hand-evaluator helpers behind a stable interface
-   so a riichienv API bump only touches this module.
+   so a riichienv API bump only touches this module. `calculate_score`
+   takes `num_players` so 3p tsumo splits and honba math come out
+   right.
 
 ## Files
 
@@ -60,8 +68,8 @@ These are pure functions; no state required:
 ```rust
 use akagi::game_state::{calculate_score, waits_for};
 
-// 3 han 30 fu, non-dealer ron, 0 honba.
-let s = calculate_score(3, 30, false, false, 0);
+// 3 han 30 fu, non-dealer ron, 0 honba, 4p.
+let s = calculate_score(3, 30, false, false, 0, 4);
 assert_eq!(s.total, 3_900);
 
 let waits = waits_for("123456789m123p1s")?;

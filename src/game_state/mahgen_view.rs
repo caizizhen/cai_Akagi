@@ -38,28 +38,39 @@ pub struct PlayerMahgenView {
 /// Top-level mahgen view.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MahgenView {
-    pub players: [PlayerMahgenView; 4],
+    /// One entry per seat. Length matches `num_players` (3 for sanma, 4 for yonma).
+    pub players: Vec<PlayerMahgenView>,
+    /// 3 (sanma) or 4 (yonma).
+    #[serde(default = "default_num_players")]
+    pub num_players: u8,
     /// Dora indicators — single concatenated string.
     pub dora_indicators: String,
 }
 
+fn default_num_players() -> u8 {
+    4
+}
+
 impl MahgenView {
     pub fn from_snapshot(snap: &GameStateSnapshot) -> Self {
-        let players: [PlayerMahgenView; 4] = std::array::from_fn(|i| {
-            let p = &snap.players[i];
-            PlayerMahgenView {
+        let np = snap.num_players;
+        let players: Vec<PlayerMahgenView> = snap
+            .players
+            .iter()
+            .map(|p| PlayerMahgenView {
                 seat: p.seat,
                 hand: encode_hand(p, snap.our_seat),
                 melds: p
                     .melds
                     .iter()
-                    .map(|m| encode_meld(m, p.seat))
+                    .map(|m| encode_meld(m, p.seat, np))
                     .collect(),
                 river: encode_river(&p.river),
-            }
-        });
+            })
+            .collect();
         Self {
             players,
+            num_players: np,
             dora_indicators: encode_concat(&snap.dora_markers),
         }
     }
@@ -184,13 +195,13 @@ fn encode_hand(p: &PlayerSnapshot, our_seat: Option<u8>) -> String {
 /// - **Kakan**: take the original pon's structure and replace the `_<digit>`
 ///   slot with `^<digit>` (no red) or `v<digit>` (red involved). For red:
 ///   `v0` = bottom red + top normal, `v5` = bottom normal + top red.
-fn encode_meld(m: &MeldSnapshot, caller_seat: u8) -> String {
+fn encode_meld(m: &MeldSnapshot, caller_seat: u8, np: u8) -> String {
     match m.kind {
-        MeldKind::Chi => encode_chi(m, caller_seat),
-        MeldKind::Pon => encode_pon(m, caller_seat),
-        MeldKind::Daiminkan => encode_daiminkan(m, caller_seat),
+        MeldKind::Chi => encode_chi(m, caller_seat, np),
+        MeldKind::Pon => encode_pon(m, caller_seat, np),
+        MeldKind::Daiminkan => encode_daiminkan(m, caller_seat, np),
         MeldKind::Ankan => encode_ankan(m),
-        MeldKind::Kakan => encode_kakan(m, caller_seat),
+        MeldKind::Kakan => encode_kakan(m, caller_seat, np),
     }
 }
 
@@ -213,15 +224,21 @@ enum CallSide {
     Shimocha, // lower / right → mahgen position 3 (pon) or 4 (daiminkan)
 }
 
-fn call_side(caller: u8, from_who: i8) -> CallSide {
+fn call_side(caller: u8, from_who: i8, np: u8) -> CallSide {
     if from_who < 0 {
         return CallSide::Kamicha; // shouldn't happen for opened melds; safe default
     }
-    let from = (from_who as i32 + 4) as u8 % 4;
-    match (from + 4 - caller) % 4 {
-        3 => CallSide::Kamicha,
-        2 => CallSide::Toimen,
-        1 => CallSide::Shimocha,
+    let from = (from_who as u8) % np;
+    let diff = (from + np - caller) % np;
+    match (np, diff) {
+        // 4p: 3 seats other than self, three relative kinds.
+        (4, 3) => CallSide::Kamicha,
+        (4, 2) => CallSide::Toimen,
+        (4, 1) => CallSide::Shimocha,
+        // 3p: only kamicha and shimocha exist (no toimen — opposite seat
+        // doesn't exist in a triangle).
+        (3, 2) => CallSide::Kamicha,
+        (3, 1) => CallSide::Shimocha,
         _ => CallSide::Kamicha,
     }
 }
@@ -250,8 +267,8 @@ fn chi_pos(side: CallSide) -> usize {
     pon_pos(side)
 }
 
-fn encode_chi(m: &MeldSnapshot, caller_seat: u8) -> String {
-    let side = call_side(caller_seat, m.from_who);
+fn encode_chi(m: &MeldSnapshot, caller_seat: u8, np: u8) -> String {
+    let side = call_side(caller_seat, m.from_who, np);
     let pos = chi_pos(side);
 
     // Pull called digit + suit, plus the two non-called tiles' digits.
@@ -300,8 +317,8 @@ fn encode_chi(m: &MeldSnapshot, caller_seat: u8) -> String {
     out
 }
 
-fn encode_pon(m: &MeldSnapshot, caller_seat: u8) -> String {
-    let side = call_side(caller_seat, m.from_who);
+fn encode_pon(m: &MeldSnapshot, caller_seat: u8, np: u8) -> String {
+    let side = call_side(caller_seat, m.from_who, np);
     let pos = pon_pos(side);
     let (digit, suit) = first_tile_digit_suit(m);
 
@@ -316,8 +333,8 @@ fn encode_pon(m: &MeldSnapshot, caller_seat: u8) -> String {
     out
 }
 
-fn encode_daiminkan(m: &MeldSnapshot, caller_seat: u8) -> String {
-    let side = call_side(caller_seat, m.from_who);
+fn encode_daiminkan(m: &MeldSnapshot, caller_seat: u8, np: u8) -> String {
+    let side = call_side(caller_seat, m.from_who, np);
     let pos = daiminkan_pos(side);
     let (digit, suit) = first_tile_digit_suit(m);
 
@@ -354,8 +371,8 @@ fn encode_ankan(m: &MeldSnapshot) -> String {
 ///   - If `called_tile` is red (`5xr`), bottom is red → `v0`.
 ///   - Else if any tile in `m.tiles` is red, top is red → `v5`.
 ///   - Else no red → `^`.
-fn encode_kakan(m: &MeldSnapshot, caller_seat: u8) -> String {
-    let side = call_side(caller_seat, m.from_who);
+fn encode_kakan(m: &MeldSnapshot, caller_seat: u8, np: u8) -> String {
+    let side = call_side(caller_seat, m.from_who, np);
     let pos = pon_pos(side);
     let (digit, suit) = first_tile_digit_suit(m);
 
@@ -437,6 +454,7 @@ mod tests {
             riichi_stage: false,
             double_riichi: false,
             riichi_declaration_index: None,
+            kita_tiles: vec![],
         }
     }
 
@@ -503,15 +521,15 @@ mod tests {
     fn chi_kamicha_called_tile_at_pos_1() {
         // Caller=seat 0 (E), from=seat 3 (N) → kamicha. Hand 2m+3m, called 1m.
         let m = chi_meld("1m", &["2m", "3m"], 3);
-        assert_eq!(encode_meld(&m, 0), "_123m");
+        assert_eq!(encode_meld(&m, 0, 4), "_123m");
 
         // Hand 1m+2m, called 3m from kamicha.
         let m = chi_meld("3m", &["1m", "2m"], 3);
-        assert_eq!(encode_meld(&m, 0), "_312m");
+        assert_eq!(encode_meld(&m, 0, 4), "_312m");
 
         // Hand 1m+3m, called 2m from kamicha.
         let m = chi_meld("2m", &["1m", "3m"], 3);
-        assert_eq!(encode_meld(&m, 0), "_213m");
+        assert_eq!(encode_meld(&m, 0, 4), "_213m");
     }
 
     #[test]
@@ -519,7 +537,7 @@ mod tests {
         // Caller=seat 0, from=seat 2 → toimen. Hand 1m+2m, called 3m.
         // User's example: `1_32m`.
         let m = chi_meld("3m", &["1m", "2m"], 2);
-        assert_eq!(encode_meld(&m, 0), "1_32m");
+        assert_eq!(encode_meld(&m, 0, 4), "1_32m");
     }
 
     #[test]
@@ -531,21 +549,21 @@ mod tests {
             from_who: 3,
             called_tile: Some("1z".into()),
         };
-        assert_eq!(encode_meld(&m, 0), "_111z");
+        assert_eq!(encode_meld(&m, 0, 4), "_111z");
 
         // Toimen → pos 2.
         let m2 = MeldSnapshot {
             from_who: 2,
             ..m.clone()
         };
-        assert_eq!(encode_meld(&m2, 0), "1_11z");
+        assert_eq!(encode_meld(&m2, 0, 4), "1_11z");
 
         // Shimocha → pos 3.
         let m3 = MeldSnapshot {
             from_who: 1,
             ..m.clone()
         };
-        assert_eq!(encode_meld(&m3, 0), "11_1z");
+        assert_eq!(encode_meld(&m3, 0, 4), "11_1z");
     }
 
     #[test]
@@ -558,19 +576,19 @@ mod tests {
             from_who: 1,
             called_tile: Some("1z".into()),
         };
-        assert_eq!(encode_meld(&m, 0), "111_1z");
+        assert_eq!(encode_meld(&m, 0, 4), "111_1z");
 
         let toimen = MeldSnapshot {
             from_who: 2,
             ..m.clone()
         };
-        assert_eq!(encode_meld(&toimen, 0), "1_111z");
+        assert_eq!(encode_meld(&toimen, 0, 4), "1_111z");
 
         let kamicha = MeldSnapshot {
             from_who: 3,
             ..m.clone()
         };
-        assert_eq!(encode_meld(&kamicha, 0), "_1111z");
+        assert_eq!(encode_meld(&kamicha, 0, 4), "_1111z");
     }
 
     #[test]
@@ -581,7 +599,7 @@ mod tests {
             from_who: -1,
             called_tile: None,
         };
-        assert_eq!(encode_meld(&m, 0), "0z11p0z");
+        assert_eq!(encode_meld(&m, 0, 4), "0z11p0z");
     }
 
     #[test]
@@ -594,7 +612,7 @@ mod tests {
             from_who: 2,
             called_tile: Some("5s".into()),
         };
-        assert_eq!(encode_meld(&m, 0), "5^55s");
+        assert_eq!(encode_meld(&m, 0, 4), "5^55s");
     }
 
     #[test]
@@ -607,7 +625,7 @@ mod tests {
             from_who: 2,
             called_tile: Some("5sr".into()),
         };
-        assert_eq!(encode_meld(&m, 0), "5v05s");
+        assert_eq!(encode_meld(&m, 0, 4), "5v05s");
     }
 
     #[test]
@@ -620,7 +638,7 @@ mod tests {
             from_who: 3,
             called_tile: Some("5p".into()),
         };
-        assert_eq!(encode_meld(&m, 0), "v555p");
+        assert_eq!(encode_meld(&m, 0, 4), "v555p");
     }
 
     #[test]
@@ -631,7 +649,7 @@ mod tests {
             from_who: 3,
             called_tile: Some("5p".into()),
         };
-        assert_eq!(encode_meld(&m, 0), "^555p");
+        assert_eq!(encode_meld(&m, 0, 4), "^555p");
     }
 
     #[test]

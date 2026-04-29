@@ -130,14 +130,17 @@ ca_dir  = "./ca"
 
 [bot]
 enabled   = true
-active    = "example"
+active_4p = "mortal"        # bot used in 4-player (yonma) games
+active_3p = "mortal3p"      # bot used in 3-player (sanma) games; empty = none
 auto_sync = true
 dir       = "./mjai_bot"
 ```
 
 Edit live via the `update_config` Tauri command. Note: changing
-`proxy.addr` requires `stop_proxy` + `start_proxy`; `bot.active` swaps on
-the next `start_game`.
+`proxy.addr` requires `stop_proxy` + `start_proxy`; `bot.active_4p` /
+`bot.active_3p` swap on the next `start_game` (per-mode based on the
+table's `num_players`). Pre-3p config files with a single `active = "..."`
+key are auto-migrated into `active_4p` on load.
 
 ---
 
@@ -178,7 +181,7 @@ working reference.
 ## TODO
 
 - [ ] Complete frontend
-- [ ] 3-player mahjong
+- [x] 3-player mahjong (sanma) — full pipeline: bridge / tracker / snapshot / analysis / FE / per-mode bot routing. See `reference/reference_mjai_3p.md` for the wire format.
 - [ ] Other platforms (Tenhou / RiichiCity)
 - [x] Download mjai bot from GitHub repo link (per-bot release URL → auto-fetch into `mjai_bot/<name>/`)
 

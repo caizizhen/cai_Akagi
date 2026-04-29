@@ -19,16 +19,17 @@ use tokio::sync::RwLock;
 
 fn start_game(seat: u8) -> MjaiEvent {
     MjaiEvent::StartGame {
-        names: ["a".into(), "b".into(), "c".into(), "d".into()],
+        names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
         kyoku_first: None,
         aka_flag: None,
         id: Some(seat),
+        num_players: 4,
     }
 }
 
 fn start_kyoku() -> MjaiEvent {
     // Tenpai-shape seat-0 hand: 234m 234p 234s 67p + EE → waits 5p/8p ryanmen.
-    let seat0: [String; 13] = [
+    let seat0: Vec<String> = vec![
         "2m".into(),
         "3m".into(),
         "4m".into(),
@@ -43,7 +44,7 @@ fn start_kyoku() -> MjaiEvent {
         "E".into(),
         "E".into(),
     ];
-    let filler: [String; 13] = std::array::from_fn(|_| "1m".into());
+    let filler: Vec<String> = (0..13).map(|_| "1m".into()).collect();
     MjaiEvent::StartKyoku {
         bakaze: "E".into(),
         dora_marker: "9p".into(),
@@ -51,8 +52,9 @@ fn start_kyoku() -> MjaiEvent {
         honba: 0,
         kyotaku: 0,
         oya: 0,
-        scores: [25_000, 25_000, 25_000, 25_000],
-        tehais: [seat0, filler.clone(), filler.clone(), filler],
+        scores: vec![25_000, 25_000, 25_000, 25_000],
+        tehais: vec![seat0, filler.clone(), filler.clone(), filler],
+        num_players: 4,
     }
 }
 

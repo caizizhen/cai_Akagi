@@ -81,10 +81,11 @@ mod tests {
     #[test]
     fn start_game_id_u8_becomes_string() {
         let ev = AkagiEvent::StartGame {
-            names: ["a".into(), "b".into(), "c".into(), "d".into()],
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
             kyoku_first: None,
             aka_flag: None,
             id: Some(2),
+            num_players: 4,
         };
         let out = to_riichienv(&ev).unwrap().unwrap();
         match out {
@@ -98,10 +99,11 @@ mod tests {
     #[test]
     fn start_game_no_id_works() {
         let ev = AkagiEvent::StartGame {
-            names: ["a".into(), "b".into(), "c".into(), "d".into()],
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
             kyoku_first: None,
             aka_flag: None,
             id: None,
+            num_players: 4,
         };
         let out = to_riichienv(&ev).unwrap().unwrap();
         assert!(matches!(out, RiEvent::StartGame { id: None, .. }));
@@ -136,6 +138,7 @@ mod tests {
 
     #[test]
     fn start_kyoku_round_trips() {
+        let one_hand: Vec<String> = (0..13).map(|i| format!("{}m", (i % 9) + 1)).collect();
         let ev = AkagiEvent::StartKyoku {
             bakaze: "E".into(),
             dora_marker: "2m".into(),
@@ -143,8 +146,9 @@ mod tests {
             honba: 0,
             kyotaku: 0,
             oya: 0,
-            scores: [25000, 25000, 25000, 25000],
-            tehais: std::array::from_fn(|_| std::array::from_fn(|i| format!("{}m", i + 1))),
+            scores: vec![25000, 25000, 25000, 25000],
+            tehais: vec![one_hand.clone(), one_hand.clone(), one_hand.clone(), one_hand],
+            num_players: 4,
         };
         let out = to_riichienv(&ev).unwrap().unwrap();
         match out {
@@ -179,7 +183,7 @@ mod tests {
         let ev = AkagiEvent::Hora {
             actor: 2,
             target: 3,
-            deltas: Some([0, 0, 2300, -1300]),
+            deltas: Some(vec![0, 0, 2300, -1300]),
             ura_markers: Some(vec!["C".into()]),
         };
         let out = to_riichienv(&ev).unwrap().unwrap();

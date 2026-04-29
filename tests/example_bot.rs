@@ -77,21 +77,17 @@ fn tehai(tiles: &[&str]) -> [String; 13] {
 
 fn start_game(seat: u8) -> MjaiEvent {
     MjaiEvent::StartGame {
-        names: ["a".into(), "b".into(), "c".into(), "d".into()],
+        names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
         kyoku_first: Some(0),
         aka_flag: Some(true),
         id: Some(seat),
+        num_players: 4,
     }
 }
 
 fn start_kyoku(my_seat: u8, my_tehai: [String; 13]) -> MjaiEvent {
-    let mut tehais: [[String; 13]; 4] = [
-        empty_tehai(),
-        empty_tehai(),
-        empty_tehai(),
-        empty_tehai(),
-    ];
-    tehais[my_seat as usize] = my_tehai;
+    let mut tehais: Vec<Vec<String>> = (0..4).map(|_| empty_tehai().to_vec()).collect();
+    tehais[my_seat as usize] = my_tehai.to_vec();
     MjaiEvent::StartKyoku {
         bakaze: "E".into(),
         dora_marker: "1m".into(),
@@ -99,8 +95,9 @@ fn start_kyoku(my_seat: u8, my_tehai: [String; 13]) -> MjaiEvent {
         honba: 0,
         kyotaku: 0,
         oya: 0,
-        scores: [25000, 25000, 25000, 25000],
+        scores: vec![25000, 25000, 25000, 25000],
         tehais,
+        num_players: 4,
     }
 }
 

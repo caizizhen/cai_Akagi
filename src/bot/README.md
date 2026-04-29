@@ -31,7 +31,10 @@ bridge to them.
   reach_accepted / hora / ryukyoku / end_kyoku / end_game), flushes the
   pending batch through the `BotRunner`, and broadcasts every
   `BotResponse` (including `MjaiEvent::None`) on the `BotResponseBus`.
-  Spawn point is `start_game` carrying the bot's seat in the `id` field.
+  Spawn point is `start_game` carrying the bot's seat in the `id` field
+  and the table's `num_players`. The manager picks `active_4p` or
+  `active_3p` from `BotConfig` based on `num_players`; an empty slot for
+  the matching mode means analysis-only for that game (no runner spawned).
 
 ## Adding a new bot
 
@@ -74,10 +77,11 @@ Example `manifest.toml`:
 manifest_version = 1
 
 [bot]
-name        = "mortal"
-display     = "Mortal"
-description = "AGPL deep-RL mahjong bot."
-version     = "0.5.0"
+name             = "mortal"
+display          = "Mortal"
+description      = "AGPL deep-RL mahjong bot."
+version          = "0.5.0"
+supported_modes  = ["4p"]   # ["3p"], ["4p"], or ["4p", "3p"]
 
 [settings.api_url]
 type    = "string"
@@ -114,6 +118,12 @@ choices = ["mortal.pth", "mortal-1.5.pth"]
 Field types: `string`, `bool`, `int`, `float`, `enum` (one of `choices`).
 `secret = true` makes the frontend render a password input and Akagi
 substitutes the value with `***` in tracing.
+
+`supported_modes` declares which game modes this bot can play. Accepted
+values: `"4p"` (yonma) and `"3p"` (sanma). Defaults to `["4p"]` when the
+field is absent — pre-3p manifests stay 4p-only without edits. The Bots
+route in the frontend disables the per-mode active toggle when the bot
+doesn't support that mode.
 
 Bots see the resolved settings (defaults ⊕ on-disk values, validated
 against the manifest) via the env var `AKAGI_BOT_CONFIG`, which points
@@ -192,11 +202,26 @@ In-process embedding (PyO3) was considered and rejected: linking
 libpython makes single-binary distribution painful on Windows/macOS and
 couples Akagi's lifecycle to libriichi's.
 
+## Per-mode active bot (4p / 3p)
+
+`BotConfig` stores two slots: `active_4p` and `active_3p`. `BotManager`
+picks the slot matching `start_game.num_players` (3 → `active_3p`, else
+`active_4p`). Empty slot ⇒ no runner spawned for that game (analysis
+still runs).
+
+Frontend → backend: `set_active_bot(mode, name)` IPC command, where
+`mode` is `"4p"` or `"3p"` and `name` is the bot subdir name (or `""`
+to clear the slot). The Bots route shows two switches per row.
+
+Pre-3p config files with a single `[bot] active = "..."` key are
+migrated on load: the legacy value is moved to `active_4p` once via
+`BotConfig::migrate_legacy_active`, and the on-disk file is rewritten
+without the legacy field on the next persist.
+
 ## What's NOT here
 
 - Mortal weights. Users place `mortal.pth` inside their `mjai_bot/mortal/`
   folder; Akagi never ships, fetches, or configures weight paths. The
   bot script loads them itself.
-- 3-player support. v3 is 4P-only for now.
 - HUD rendering. `BotResponse`s land on the broadcast bus; the HUD layer
   is a downstream consumer added later.

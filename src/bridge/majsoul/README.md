@@ -11,12 +11,19 @@ discards, calls, agari/ryukyoku) are still TODO.
 
 - **Request (client→server)**: `payload.account_id` → stored on the bridge.
 - **Response (server→client)**:
-  - Seat: index of `account_id` in `payload.seat_list` (0..=3).
+  - Seat: index of `account_id` in `payload.seat_list` (0..=3 for 4p,
+    0..=2 for 3p).
+  - **`num_players`**: `seat_list.len()`. Stored on `MajsoulBridge` and
+    threaded through every subsequent emission. Anything other than 3 or
+    4 falls back to 4 with a warn.
   - Names: build `account_id → nickname` map from `payload.players[]`,
-    then walk `seat_list` to populate the 4-name array. Robot seats live
-    under `payload.robots[]` without a nickname, so they get `""`. 3p
-    `seat_list` of length 3 pads the 4th slot with `""`.
-- Emits `MjaiEvent::StartGame { id: Some(seat), names, .. }`.
+    then walk `seat_list` to produce a length-`num_players` Vec. Robot
+    seats live under `payload.robots[]` without a nickname, so they get
+    `""`. **No length-4 padding** — sanma authGame emits a length-3 names
+    array natively.
+  - `gameConfig.meta.mode_id` is logged for diagnostics but not gated on
+    (sanma AI rooms emit `mode_id = 0`; ranked sanma uses 21/22/26).
+- Emits `MjaiEvent::StartGame { id: Some(seat), names, num_players, .. }`.
 
 `aka_flag` / `kyoku_first` aren't known yet at authGame time, so they stay
 `None` and are omitted from the JSON via `#[skip_serializing_none]`.
@@ -48,8 +55,9 @@ Field mapping from `ActionNewRound`:
 | `honba`       | `ben`                  |
 | `kyotaku`     | `liqibang`             |
 | `dora_marker` | `doras[0]` (mjai-mapped) |
-| `scores`      | `scores` (3p padded with 0) |
-| `tehais[seat]`| `tiles` (sort, see above) |
+| `scores`      | `scores` (length matches `num_players` — 3 for sanma, 4 for yonma; **no padding**) |
+| `tehais`      | length-`num_players` Vec; `tehais[seat]` is `tiles` (sorted, see above), all other rows are `["?"; 13]` |
+| `num_players` | resolved from `seat_list.len()` at authGame; stamped on the emitted event |
 
 Tile mapping uses `tile::ms_to_mjai` (`0m/0p/0s` → `5mr/5pr/5sr`,
 `1z..7z` → `E S W N P F C`). Unknown tile strings error and the event is
@@ -150,7 +158,9 @@ action exposed a tile that another seat could ron. Updated by:
 - `ActionAnGangAddGang(ankan)` — Majsoul's 国士無双搶暗槓 (only kokushi
   can rob; the server only emits `ActionHule` in that valid case, so
   unconditional tracking is safe).
-- `ActionBaBei` (3p) — 胡拔北; pending 3p support.
+- `ActionBaBei` (3p) — 搶北 / search-the-kita. `build_kita` sets
+  `last_revealed_tile_actor = Some(seat)`, so a follow-up `ActionHule`
+  with `hu_tile = "4z"` attributes the win to the kita declarer.
 
 If we just used the last discard, chankan and the ankan robbery edge
 case would attribute the win to the wrong player. A ron with no prior
@@ -181,9 +191,16 @@ event itself still emits normally.
 | `ActionLiuJu`  | 途中流局 — 九種九牌 / 四風連打 / 四家立直 / 四開槓 / 三家和了 | `[ryukyoku{deltas:None}, end_kyoku]` |
 
 `ActionNoTile.scores[]` is an array of per-event point change records;
-each carries its own `delta_scores: [4]`. The bridge sums them per seat
-into a single `[i32; 4]` (3p deltas of length 3 are padded with a
-trailing 0 to fit the schema). Empty / missing `scores` → `deltas: None`.
+each carries its own `delta_scores` array sized to `num_players` (3 for
+sanma, 4 for yonma). The bridge sums them per seat into a single
+`Vec<i32>` of native length — no padding. Empty / missing `scores` →
+`deltas: None`.
+
+`ActionLiuJu.type` is a `uint32` with no enum in `liqi.proto`; both
+Akagi-Python and AkagiNG ignore the field and emit a generic ryukyoku.
+We follow suit. Sanma's abortive set is reduced (no four-wind / four-
+riichi — those need 4 players); kyushu_kyuhai and suukansansen still
+apply.
 
 > The mjai spec text restricts the `ryukyoku` event to 九種九牌, but
 > `libriichi` / Mortal use the same event for noten payments and rely
@@ -214,6 +231,33 @@ skipped). `tsumogiri = data.moqie` (default false).
 > verbatim in the JSON payload. Logic in `mod.rs` still defaults missing
 > fields, so the two are equivalent at the dispatch layer — the visible
 > setting matters mainly for the flow log.
+
+## ActionBaBei → kita (3p only)
+
+3-player tables get one extra action: `ActionBaBei` (北抜き / nukidora).
+Player sets aside a North tile from hand and draws a rinshan replacement.
+The bridge emits:
+
+```json
+{"type": "kita", "actor": <seat>, "pai": "N"}
+```
+
+Notes:
+
+- Majsoul's payload omits the tile field — kita is always the North wind,
+  so we hardcode `pai = "N"` per `reference/reference_mjai_3p.md`.
+- `doras: []` in the captured payload — kita does **not** flip a new dora
+  marker (Tenhou rule, confirmed live). `consume_new_dora` skipped.
+- `last_revealed_tile_actor` updated to the kita declarer so a follow-up
+  ron-on-kita (chankan-style 搶北) targets correctly in `build_hule`.
+- `pending_reach_accepted` drains normally — kita is a non-Hule action.
+- If `num_players != 3`, log warn but still emit (avoid silent loss).
+
+## Chi suppression in 3p
+
+Sanma has no chi. `build_chi_peng_gang` drops `ActionChiPengGang(chi)`
+with a warn log when `num_players == 3` (defense in depth — Majsoul
+shouldn't send it for sanma tables). Pon / kan stay enabled.
 
 ## mjai event log
 

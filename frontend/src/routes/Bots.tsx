@@ -69,18 +69,27 @@ export function Bots() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const setActive = async (name: string) => {
-    if (config?.bot.active === name) return
+  const setActive = async (mode: '4p' | '3p', name: string) => {
+    const current = mode === '3p' ? config?.bot.active_3p : config?.bot.active_4p
+    if (current === name) return
     // Optimistic: flip immediately so the Switch reflects the click; refresh
     // backfills from backend in case the call fails or the value differs.
-    if (config) setConfig({ ...config, bot: { ...config.bot, active: name } })
+    if (config) {
+      const bot = { ...config.bot, [mode === '3p' ? 'active_3p' : 'active_4p']: name }
+      setConfig({ ...config, bot })
+    }
     try {
-      await invoke('set_active_bot', { name })
+      await invoke('set_active_bot', { mode, name })
     } catch {
       /* noop */
     } finally {
       void refresh()
     }
+  }
+
+  function supportsMode(bot: BotInfo, mode: '4p' | '3p'): boolean {
+    const modes = bot.manifest?.bot.supported_modes ?? ['4p']
+    return modes.includes(mode)
   }
 
   return (
@@ -102,59 +111,73 @@ export function Bots() {
             <TableHead>Name</TableHead>
             <TableHead>Version</TableHead>
             <TableHead>Manifest</TableHead>
-            <TableHead>Active</TableHead>
+            <TableHead>4p</TableHead>
+            <TableHead>3p</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {list.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-muted-foreground">
+              <TableCell colSpan={6} className="text-center text-muted-foreground">
                 {loading ? 'Loading…' : 'No bots installed.'}
               </TableCell>
             </TableRow>
-          ) : list.map((bot) => (
-            <TableRow key={bot.name}>
-              <TableCell>
-                <div className="flex flex-col">
-                  <span className="font-medium">{bot.manifest?.bot.display ?? bot.name}</span>
-                  <span className="text-xs text-muted-foreground font-mono">{bot.dir}</span>
-                </div>
-              </TableCell>
-              <TableCell className="font-mono text-xs">{bot.manifest?.bot.version ?? '—'}</TableCell>
-              <TableCell>{bot.manifest ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : '—'}</TableCell>
-              <TableCell>
-                <Switch
-                  checked={config?.bot.active === bot.name}
-                  onCheckedChange={(v) => v && void setActive(bot.name)}
-                />
-              </TableCell>
-              <TableCell className="text-right">
-                <div className="flex items-center justify-end gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setEditing(bot.name)}
-                    disabled={!bot.manifest}
-                    className="gap-1.5"
-                  >
-                    <SettingsIcon className="h-4 w-4" />
-                    Configure
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setDeleting(bot.name)}
-                    disabled={config?.bot.active === bot.name}
-                    title={config?.bot.active === bot.name ? 'Switch active bot first' : 'Delete'}
-                    className="gap-1.5 text-red-400 hover:text-red-400"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
+          ) : list.map((bot) => {
+            const isActive4p = config?.bot.active_4p === bot.name
+            const isActive3p = config?.bot.active_3p === bot.name
+            const isActive = isActive4p || isActive3p
+            return (
+              <TableRow key={bot.name}>
+                <TableCell>
+                  <div className="flex flex-col">
+                    <span className="font-medium">{bot.manifest?.bot.display ?? bot.name}</span>
+                    <span className="text-xs text-muted-foreground font-mono">{bot.dir}</span>
+                  </div>
+                </TableCell>
+                <TableCell className="font-mono text-xs">{bot.manifest?.bot.version ?? '—'}</TableCell>
+                <TableCell>{bot.manifest ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : '—'}</TableCell>
+                <TableCell>
+                  <Switch
+                    checked={isActive4p}
+                    disabled={!supportsMode(bot, '4p')}
+                    onCheckedChange={(v) => void setActive('4p', v ? bot.name : '')}
+                  />
+                </TableCell>
+                <TableCell>
+                  <Switch
+                    checked={isActive3p}
+                    disabled={!supportsMode(bot, '3p')}
+                    onCheckedChange={(v) => void setActive('3p', v ? bot.name : '')}
+                  />
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setEditing(bot.name)}
+                      disabled={!bot.manifest}
+                      className="gap-1.5"
+                    >
+                      <SettingsIcon className="h-4 w-4" />
+                      Configure
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setDeleting(bot.name)}
+                      disabled={isActive}
+                      title={isActive ? 'Switch active bot first' : 'Delete'}
+                      className="gap-1.5 text-red-400 hover:text-red-400"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
 

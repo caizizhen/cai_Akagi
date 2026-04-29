@@ -32,12 +32,30 @@ use crate::schema::MjaiEvent as AkagiEvent;
 use anyhow::Result;
 use riichienv_core::rule::GameRule;
 use riichienv_core::state::GameState;
+use riichienv_core::state_3p::GameState3P;
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast};
 use tracing::{info, warn};
 
+/// Engine state, varying by player count. Both variants accept the same
+/// `riichienv_core::replay::MjaiEvent` produced by `convert::to_riichienv`,
+/// so the dispatch surface is just `match self.state`.
+pub enum TrackedGame {
+    Four(GameState),
+    Three(GameState3P),
+}
+
+impl TrackedGame {
+    pub fn num_players(&self) -> u8 {
+        match self {
+            TrackedGame::Four(_) => 4,
+            TrackedGame::Three(_) => 3,
+        }
+    }
+}
+
 pub struct GameTracker {
-    state: Option<GameState>,
+    state: Option<TrackedGame>,
     rule: GameRule,
     /// The bot's own seat, captured from `start_game.id`.
     our_seat: Option<u8>,
@@ -62,31 +80,40 @@ impl GameTracker {
     pub fn handle(&mut self, ev: &AkagiEvent) -> Result<()> {
         self.events_seen += 1;
 
-        if let AkagiEvent::StartGame { id, .. } = ev {
-            // Fresh game → fresh GameState. Constructor seeds round 0
-            // (E-1) with default scores per `mode.starting_score()`.
-            self.state = Some(GameState::new(0, true, None, 0, self.rule.clone()));
+        if let AkagiEvent::StartGame { id, num_players, .. } = ev {
+            // Fresh game → fresh state. Constructor seeds round 0 with the
+            // mode-appropriate starting score (25k for 4p, 35k for 3p).
+            self.state = Some(match *num_players {
+                3 => TrackedGame::Three(GameState3P::new(0, true, None, 0, self.rule.clone())),
+                4 => TrackedGame::Four(GameState::new(0, true, None, 0, self.rule.clone())),
+                other => {
+                    warn!(
+                        "tracker: unexpected num_players={other} on start_game; defaulting to 4p"
+                    );
+                    TrackedGame::Four(GameState::new(0, true, None, 0, self.rule.clone()))
+                }
+            });
             // Each new game may put us in a different seat (or none, in
             // observer/replay mode). ALWAYS replace — never inherit stale
             // perspective from the previous game.
             self.our_seat = *id;
         }
 
-        // riichienv-core 0.4.8's `apply_mjai_event(Dahai)` pushes the tile
-        // onto `discards` but leaves the parallel `discard_from_hand` /
+        // riichienv-core's `apply_mjai_event(Dahai)` pushes the tile onto
+        // `discards` but leaves the parallel `discard_from_hand` /
         // `discard_is_riichi` arrays empty. Capture the bits we need
         // pre-apply so we can patch them on after.
         let dahai_patch = if let AkagiEvent::Dahai {
             actor, tsumogiri, ..
         } = ev
         {
-            self.state.as_ref().map(|s| {
+            self.state.as_ref().map(|tg| {
                 let actor = *actor as usize;
-                (
-                    actor,
-                    !*tsumogiri,                       // tedashi = !tsumogiri
-                    s.players[actor].riichi_stage,     // true = this dahai commits riichi
-                )
+                let riichi_stage = match tg {
+                    TrackedGame::Four(s) => s.players[actor].riichi_stage,
+                    TrackedGame::Three(s) => s.players[actor].riichi_stage,
+                };
+                (actor, !*tsumogiri, riichi_stage)
             })
         } else {
             None
@@ -96,20 +123,39 @@ impl GameTracker {
             return Ok(()); // Skipped (e.g. MjaiEvent::None).
         };
 
-        if let Some(s) = self.state.as_mut() {
-            s.apply_mjai_event(ri);
-
-            if let Some((actor, tedashi, was_riichi_commit)) = dahai_patch {
-                let p = &mut s.players[actor];
-                let n = p.discards.len();
-                if p.discard_from_hand.len() < n {
-                    p.discard_from_hand.push(tedashi);
+        if let Some(tg) = self.state.as_mut() {
+            match tg {
+                TrackedGame::Four(s) => {
+                    s.apply_mjai_event(ri);
+                    if let Some((actor, tedashi, was_riichi_commit)) = dahai_patch {
+                        let p = &mut s.players[actor];
+                        let n = p.discards.len();
+                        if p.discard_from_hand.len() < n {
+                            p.discard_from_hand.push(tedashi);
+                        }
+                        if p.discard_is_riichi.len() < n {
+                            p.discard_is_riichi.push(was_riichi_commit);
+                        }
+                        if was_riichi_commit && p.riichi_declaration_index.is_none() {
+                            p.riichi_declaration_index = Some(n - 1);
+                        }
+                    }
                 }
-                if p.discard_is_riichi.len() < n {
-                    p.discard_is_riichi.push(was_riichi_commit);
-                }
-                if was_riichi_commit && p.riichi_declaration_index.is_none() {
-                    p.riichi_declaration_index = Some(n - 1);
+                TrackedGame::Three(s) => {
+                    s.apply_mjai_event(ri);
+                    if let Some((actor, tedashi, was_riichi_commit)) = dahai_patch {
+                        let p = &mut s.players[actor];
+                        let n = p.discards.len();
+                        if p.discard_from_hand.len() < n {
+                            p.discard_from_hand.push(tedashi);
+                        }
+                        if p.discard_is_riichi.len() < n {
+                            p.discard_is_riichi.push(was_riichi_commit);
+                        }
+                        if was_riichi_commit && p.riichi_declaration_index.is_none() {
+                            p.riichi_declaration_index = Some(n - 1);
+                        }
+                    }
                 }
             }
         }
@@ -119,9 +165,10 @@ impl GameTracker {
     /// Snapshot of the current state. Returns `None` if no game has
     /// started yet.
     pub fn snapshot(&self) -> Option<GameStateSnapshot> {
-        self.state
-            .as_ref()
-            .map(|s| GameStateSnapshot::from_state(s, self.our_seat))
+        self.state.as_ref().map(|tg| match tg {
+            TrackedGame::Four(s) => GameStateSnapshot::from_state(s, self.our_seat),
+            TrackedGame::Three(s) => GameStateSnapshot::from_state_3p(s, self.our_seat),
+        })
     }
 
     /// The captured observer seat, or `None` if no `start_game.id` arrived.
@@ -129,11 +176,26 @@ impl GameTracker {
         self.our_seat
     }
 
-    /// Borrow the live engine state. For advanced use cases (e.g. running
-    /// `HandEvaluator` against the observer's hand). Most callers should
-    /// prefer `snapshot()` so the wire shape stays decoupled.
+    /// `Some(num_players)` if a game is in progress.
+    pub fn num_players(&self) -> Option<u8> {
+        self.state.as_ref().map(|tg| tg.num_players())
+    }
+
+    /// Borrow the live engine state. Returns `None` for non-4p games or no
+    /// game in progress. Callers needing 3p access can use `state_3p()`.
     pub fn state(&self) -> Option<&GameState> {
-        self.state.as_ref()
+        match &self.state {
+            Some(TrackedGame::Four(s)) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// Borrow the live 3p engine state if the current game is sanma.
+    pub fn state_3p(&self) -> Option<&GameState3P> {
+        match &self.state {
+            Some(TrackedGame::Three(s)) => Some(s),
+            _ => None,
+        }
     }
 }
 
@@ -221,16 +283,17 @@ mod tests {
 
     fn start_game() -> AkagiEvent {
         AkagiEvent::StartGame {
-            names: ["a".into(), "b".into(), "c".into(), "d".into()],
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
             kyoku_first: None,
             aka_flag: None,
             id: Some(0),
+            num_players: 4,
         }
     }
 
     fn start_kyoku(oya: u8) -> AkagiEvent {
         // 13 tiles per hand, garbage-but-parseable.
-        let one_hand: [String; 13] = std::array::from_fn(|_| "1m".into());
+        let one_hand: Vec<String> = (0..13).map(|_| "1m".into()).collect();
         AkagiEvent::StartKyoku {
             bakaze: "E".into(),
             dora_marker: "2m".into(),
@@ -238,8 +301,9 @@ mod tests {
             honba: 0,
             kyotaku: 0,
             oya,
-            scores: [25_000, 25_000, 25_000, 25_000],
-            tehais: std::array::from_fn(|_| one_hand.clone()),
+            scores: vec![25_000, 25_000, 25_000, 25_000],
+            tehais: vec![one_hand.clone(), one_hand.clone(), one_hand.clone(), one_hand],
+            num_players: 4,
         }
     }
 
@@ -300,10 +364,11 @@ mod tests {
 
     fn start_game_with_seat(seat: Option<u8>) -> AkagiEvent {
         AkagiEvent::StartGame {
-            names: ["a".into(), "b".into(), "c".into(), "d".into()],
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
             kyoku_first: None,
             aka_flag: None,
             id: seat,
+            num_players: 4,
         }
     }
 
@@ -386,6 +451,40 @@ mod tests {
         assert!(p0.river[2].is_riichi);
 
         assert_eq!(p0.riichi_declaration_index, Some(2));
+    }
+
+    /// 3p `start_game` constructs a `GameState3P` and the snapshot reflects
+    /// length-3 players + `num_players: 3`. Switching back to 4p replaces
+    /// the engine cleanly.
+    #[test]
+    fn three_player_start_game_constructs_3p_state_and_snapshot_is_length_three() {
+        let mut t = GameTracker::new();
+        let ev = AkagiEvent::StartGame {
+            names: vec!["a".into(), "b".into(), "c".into()],
+            kyoku_first: None,
+            aka_flag: None,
+            id: Some(1),
+            num_players: 3,
+        };
+        t.handle(&ev).unwrap();
+        assert!(t.state().is_none(), "state() returns None for 3p");
+        assert!(t.state_3p().is_some(), "state_3p() exposes the 3p engine");
+        assert_eq!(t.num_players(), Some(3));
+        assert_eq!(t.our_seat(), Some(1));
+        let snap = t.snapshot().expect("3p snapshot");
+        assert_eq!(snap.num_players, 3);
+        assert_eq!(snap.players.len(), 3);
+        // 3p starting score is 35000, not 25000.
+        for p in &snap.players {
+            assert_eq!(p.score, 35000);
+            assert!(p.kita_tiles.is_empty(), "no kita declared yet");
+        }
+
+        // Switch back to 4p: state replaced cleanly.
+        t.handle(&start_game_with_seat(Some(2))).unwrap();
+        assert!(t.state().is_some());
+        assert!(t.state_3p().is_none());
+        assert_eq!(t.num_players(), Some(4));
     }
 
     #[test]
