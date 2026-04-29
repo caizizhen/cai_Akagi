@@ -191,7 +191,7 @@ impl BotManager {
                 return Err(e).context("bot react failed");
             }
         };
-        debug!(action = ?resp.action, "bot reacted");
+        debug!(action = ?resp.action, meta = ?resp.meta, "bot reacted");
         // MjaiEvent::None still goes on the bus — downstream consumers
         // decide whether to render. Centralizes the "skip" decision.
         let _ = self.out_tx.send(resp);

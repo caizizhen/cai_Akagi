@@ -284,7 +284,10 @@ pub fn write_resolved(
     let path = dir.join(RESOLVED_FILE);
     let body = serde_json::to_vec_pretty(values).context("serialize resolved settings")?;
     std::fs::write(&path, body).with_context(|| format!("write {}", path.display()))?;
-    Ok(path)
+    // Canonicalize so the env var survives the child's `current_dir(bot_dir)`
+    // — a relative path would otherwise be resolved against the bot's cwd
+    // and miss the file (`bot_dir/bot_dir/.akagi/...`).
+    std::fs::canonicalize(&path).with_context(|| format!("canonicalize {}", path.display()))
 }
 
 fn validate(key: &str, spec: &FieldSpec, value: &serde_json::Value) -> Result<()> {
@@ -587,5 +590,29 @@ mystery = "ignored"
         let back: BTreeMap<String, serde_json::Value> =
             serde_json::from_str(&body).unwrap();
         assert_eq!(back["k"], json!("v"));
+    }
+
+    /// Regression: the resolved-settings path must be absolute. The bot
+    /// child runs with `current_dir(bot_dir)`, so a relative
+    /// `AKAGI_BOT_CONFIG` would resolve against the wrong cwd and the bot
+    /// would silently fall back to its hard-coded defaults (e.g. mortal
+    /// dropping `online: true` and the API key on the floor).
+    #[test]
+    fn write_resolved_returns_absolute_path_even_for_relative_bot_dir() {
+        let tmp = TempDir::new().unwrap();
+        let cwd_guard = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        std::fs::create_dir_all("bots/demo").unwrap();
+        let mut values: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+        values.insert("k".into(), json!("v"));
+
+        let result = write_resolved(Path::new("bots/demo"), &values);
+        // Always restore cwd before asserting so a failure doesn't leak.
+        std::env::set_current_dir(&cwd_guard).unwrap();
+
+        let path = result.unwrap();
+        assert!(path.is_absolute(), "expected absolute, got {}", path.display());
+        assert!(path.ends_with(".akagi/resolved_settings.json"));
     }
 }
