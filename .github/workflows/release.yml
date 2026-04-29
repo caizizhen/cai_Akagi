@@ -1,0 +1,177 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v3.*'
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: '3.12.13'
+  PBS_RELEASE: '20260414'
+  UV_VERSION: '0.11.8'
+
+jobs:
+  guard:
+    name: Verify tag is on v3 branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check tag reachable from origin/v3
+        run: |
+          set -euo pipefail
+          git fetch origin v3
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/v3; then
+            echo "tag ${GITHUB_REF} commit ${GITHUB_SHA} is not on the v3 branch" >&2
+            exit 1
+          fi
+
+  build:
+    needs: guard
+    name: ${{ matrix.target }} (${{ matrix.variant }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux: ubuntu-22.04 keeps glibc old enough that the binaries
+          # run on most user machines without forced glibc upgrades.
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            tauri_target: x86_64-unknown-linux-gnu
+          - os: macos-14
+            target: aarch64-apple-darwin
+            tauri_target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+            tauri_target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            tauri_target: x86_64-pc-windows-msvc
+        variant: [with-runtime, no-runtime]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Per-(target,variant) cache
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.target }}-${{ matrix.variant }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      # tauri-cli build is slow (~3 min). Cache the built binary keyed on
+      # OS + the cli version pin we use.
+      - name: Cache tauri-cli
+        id: tauri-cli-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-tauri
+            ~/.cargo/bin/cargo-tauri.exe
+          key: tauri-cli-v2-${{ matrix.os }}
+
+      - name: Install tauri-cli
+        if: steps.tauri-cli-cache.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --locked --version "^2"
+
+      - name: Linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libssl-dev \
+            patchelf \
+            libfuse2
+
+      # Cache fetched python + uv tarballs by version triple.
+      - name: Cache bundled runtime
+        if: matrix.variant == 'with-runtime'
+        uses: actions/cache@v4
+        with:
+          path: |
+            runtime/python/${{ matrix.target }}
+            runtime/uv/${{ matrix.target }}
+          key: runtime-${{ matrix.target }}-py${{ env.PYTHON_VERSION }}-pbs${{ env.PBS_RELEASE }}-uv${{ env.UV_VERSION }}
+
+      - name: Fetch python+uv
+        if: matrix.variant == 'with-runtime'
+        shell: bash
+        env:
+          PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
+          PBS_RELEASE: ${{ env.PBS_RELEASE }}
+          UV_VERSION: ${{ env.UV_VERSION }}
+        run: bash scripts/fetch-runtime.sh "${{ matrix.target }}"
+
+      - name: Build
+        shell: bash
+        env:
+          NO_STRIP: '1'
+        run: cargo tauri build --target ${{ matrix.target }}
+
+      # Rename outputs with the variant suffix so artifacts from both
+      # lanes can coexist in the same release.
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir dist
+          OUT="target/${{ matrix.target }}/release/bundle"
+          shopt -s nullglob globstar
+          for f in "$OUT"/**/*; do
+            [[ -f "$f" ]] || continue
+            case "$f" in
+              *.deb|*.rpm|*.AppImage|*.dmg|*.msi|*.exe)
+                base="$(basename "$f")"
+                name="${base%.*}"
+                ext="${base##*.}"
+                cp "$f" "dist/${name}-${{ matrix.variant }}.${ext}"
+                ;;
+            esac
+          done
+          ls -la dist
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: akagi-${{ matrix.target }}-${{ matrix.variant }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - run: ls -la artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
