@@ -143,24 +143,26 @@ jobs:
         run: cargo tauri build --target ${{ matrix.target }}
 
       # Rename outputs with the variant suffix so artifacts from both
-      # lanes can coexist in the same release.
+      # lanes can coexist in the same release. Uses `find` instead of
+      # bash globstar — macOS ships bash 3.2 which has no globstar.
       - name: Collect artifacts
         shell: bash
         run: |
           set -euo pipefail
           mkdir dist
           OUT="target/${{ matrix.target }}/release/bundle"
-          shopt -s nullglob globstar
-          for f in "$OUT"/**/*; do
-            [[ -f "$f" ]] || continue
-            case "$f" in
-              *.deb|*.rpm|*.AppImage|*.dmg|*.msi|*.exe)
-                base="$(basename "$f")"
-                name="${base%.*}"
-                ext="${base##*.}"
-                cp "$f" "dist/${name}-${{ matrix.variant }}.${ext}"
-                ;;
-            esac
+          find "$OUT" -type f \( \
+              -name '*.deb' -o \
+              -name '*.rpm' -o \
+              -name '*.AppImage' -o \
+              -name '*.dmg' -o \
+              -name '*.msi' -o \
+              -name '*.exe' \
+            \) -print0 | while IFS= read -r -d '' f; do
+            base="$(basename "$f")"
+            name="${base%.*}"
+            ext="${base##*.}"
+            cp "$f" "dist/${name}-${{ matrix.variant }}.${ext}"
           done
           ls -la dist
 
