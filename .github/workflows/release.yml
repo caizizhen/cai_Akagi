@@ -143,6 +143,10 @@ jobs:
       # Rename outputs with the variant suffix so artifacts from both
       # lanes can coexist in the same release. Uses `find` instead of
       # bash globstar — macOS ships bash 3.2 which has no globstar.
+      #
+      # `-setup.exe` (not `*.exe`): NSIS drops `t32.exe`, `t64.exe`,
+      # `w32.exe`, `w64.exe` plugin/bootstrap binaries next to the main
+      # installer; only the `*-setup.exe` is the actual user-facing one.
       - name: Collect artifacts
         shell: bash
         run: |
@@ -155,7 +159,7 @@ jobs:
               -name '*.AppImage' -o \
               -name '*.dmg' -o \
               -name '*.msi' -o \
-              -name '*.exe' \
+              -name '*-setup.exe' \
             \) -print0 | while IFS= read -r -d '' f; do
             base="$(basename "$f")"
             name="${base%.*}"
