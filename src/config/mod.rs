@@ -29,11 +29,31 @@ enum ResolvedPath {
 }
 
 fn resolve_config_path(cli_path: Option<&Path>) -> ResolvedPath {
+    resolve_config_path_inner(
+        cli_path,
+        crate::util::user_config_root(),
+        crate::util::is_appimage(),
+    )
+}
+
+fn resolve_config_path_inner(
+    cli_path: Option<&Path>,
+    user_cfg_root: Option<PathBuf>,
+    appimage: bool,
+) -> ResolvedPath {
     if let Some(p) = cli_path {
         if p.exists() {
             return ResolvedPath::Existing(p.to_path_buf());
         }
         return ResolvedPath::Missing(p.to_path_buf());
+    }
+
+    // Existing-file search: prefer user config dir, then exe-dir, then cwd.
+    if let Some(user_cfg) = &user_cfg_root {
+        let candidate = user_cfg.join("config.toml");
+        if candidate.exists() {
+            return ResolvedPath::Existing(candidate);
+        }
     }
 
     if let Ok(exe) = std::env::current_exe() {
@@ -48,6 +68,14 @@ fn resolve_config_path(cli_path: Option<&Path>) -> ResolvedPath {
     let cwd_candidate = PathBuf::from("configs.toml");
     if cwd_candidate.exists() {
         return ResolvedPath::Existing(cwd_candidate);
+    }
+
+    // No existing config. Choose a writable target. Under AppImage (or
+    // whenever exe dir is read-only), write to the user config dir.
+    if appimage {
+        if let Some(user_cfg) = user_cfg_root {
+            return ResolvedPath::Missing(user_cfg.join("config.toml"));
+        }
     }
 
     let target = std::env::current_exe()
@@ -87,8 +115,35 @@ pub fn load_config(cli_path: Option<&Path>) -> (AppConfig, PathBuf) {
             match write_default_config(&target) {
                 Ok(()) => target,
                 Err(e) => {
-                    eprintln!("Failed to write default config: {e}, using in-memory defaults");
-                    return (AppConfig::default(), target);
+                    // Read-only fs (AppImage on hosts that don't set $APPIMAGE,
+                    // or system installs in /usr): retry under user config dir.
+                    if let Some(user_cfg) = crate::util::user_config_root() {
+                        let fallback = user_cfg.join("config.toml");
+                        if fallback != target {
+                            eprintln!(
+                                "Write to {} failed: {e}. Retrying at {}",
+                                target.display(),
+                                fallback.display()
+                            );
+                            match write_default_config(&fallback) {
+                                Ok(()) => fallback,
+                                Err(e2) => {
+                                    eprintln!(
+                                        "Failed to write default config: {e2}, using in-memory defaults"
+                                    );
+                                    return (AppConfig::default(), fallback);
+                                }
+                            }
+                        } else {
+                            eprintln!(
+                                "Failed to write default config: {e}, using in-memory defaults"
+                            );
+                            return (AppConfig::default(), target);
+                        }
+                    } else {
+                        eprintln!("Failed to write default config: {e}, using in-memory defaults");
+                        return (AppConfig::default(), target);
+                    }
                 }
             }
         }
@@ -158,5 +213,39 @@ mod tests {
         assert_eq!(path, target);
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Regression: under AppImage the exe dir is read-only squashfs. The
+    /// missing-config target must point at the user config dir instead of
+    /// `<exe_dir>/configs/config.toml`, otherwise the default-write fails
+    /// with `Read-only file system (os error 30)`.
+    #[test]
+    fn appimage_routes_missing_target_to_user_config_dir() {
+        let user_cfg = temp_dir("appimage-user-cfg");
+        let resolved = resolve_config_path_inner(None, Some(user_cfg.clone()), true);
+        match resolved {
+            ResolvedPath::Missing(p) => {
+                assert_eq!(p, user_cfg.join("config.toml"));
+            }
+            ResolvedPath::Existing(p) => panic!("expected Missing, got Existing({})", p.display()),
+        }
+        std::fs::remove_dir_all(&user_cfg).ok();
+    }
+
+    #[test]
+    fn non_appimage_does_not_route_to_user_config_dir() {
+        let user_cfg = temp_dir("non-appimage-user-cfg");
+        let resolved = resolve_config_path_inner(None, Some(user_cfg.clone()), false);
+        match resolved {
+            ResolvedPath::Missing(p) => {
+                assert!(
+                    !p.starts_with(&user_cfg),
+                    "non-appimage should not route to user cfg dir, got {}",
+                    p.display()
+                );
+            }
+            ResolvedPath::Existing(p) => panic!("expected Missing, got Existing({})", p.display()),
+        }
+        std::fs::remove_dir_all(&user_cfg).ok();
     }
 }

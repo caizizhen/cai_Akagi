@@ -24,19 +24,48 @@ pub fn run() {
     let (cfg, config_path) = config::load_config(args.config.as_deref());
 
     let log_dir = util::resolve_dir(&cfg.logging.dir);
+    let targets = [
+        logger::LogTarget::new("proxy", "akagi::proxy"),
+        logger::LogTarget::new("bot", "akagi::bot"),
+    ];
     let session = match logger::init(
         &log_dir,
         &cfg.logging.level,
         &cfg.logging.all_level,
-        &[
-            logger::LogTarget::new("proxy", "akagi::proxy"),
-            logger::LogTarget::new("bot", "akagi::bot"),
-        ],
+        &targets,
     ) {
         Ok(s) => Arc::new(s),
         Err(e) => {
-            eprintln!("Failed to initialise logger: {e:?}");
-            return;
+            // Read-only fs fallback: retry under user data dir.
+            if let Some(fallback) =
+                util::user_config_root().map(|r| r.join(util::strip_leading_dot(&cfg.logging.dir)))
+            {
+                if fallback != log_dir {
+                    eprintln!(
+                        "Logger init at {} failed: {e:?}. Retrying at {}",
+                        log_dir.display(),
+                        fallback.display()
+                    );
+                    match logger::init(
+                        &fallback,
+                        &cfg.logging.level,
+                        &cfg.logging.all_level,
+                        &targets,
+                    ) {
+                        Ok(s) => Arc::new(s),
+                        Err(e2) => {
+                            eprintln!("Failed to initialise logger: {e2:?}");
+                            return;
+                        }
+                    }
+                } else {
+                    eprintln!("Failed to initialise logger: {e:?}");
+                    return;
+                }
+            } else {
+                eprintln!("Failed to initialise logger: {e:?}");
+                return;
+            }
         }
     };
 
