@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useBlocker } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,6 +12,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { invoke } from '@/lib/tauri'
 import { useConfigStore } from '@/stores/configStore'
 import type { AppConfig } from '@/types'
@@ -32,11 +41,26 @@ export function Settings() {
     }
   }, [stored, setStored])
 
+  const dirty = !!draft && !!stored && JSON.stringify(draft) !== JSON.stringify(stored)
+
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty && currentLocation.pathname !== nextLocation.pathname,
+  )
+
+  useEffect(() => {
+    if (!dirty) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [dirty])
+
   if (!draft) {
     return <div className="p-6 text-muted-foreground">Loading config…</div>
   }
-
-  const dirty = JSON.stringify(draft) !== JSON.stringify(stored)
 
   const save = async () => {
     setSaving(true)
@@ -49,6 +73,26 @@ export function Settings() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const saveAndLeave = async () => {
+    setSaving(true)
+    setErr(null)
+    try {
+      await invoke('update_config', { newConfig: draft })
+      setStored(draft)
+      blocker.proceed?.()
+    } catch (e) {
+      setErr(String(e))
+      blocker.reset?.()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const discardAndLeave = () => {
+    setDraft(stored)
+    blocker.proceed?.()
   }
 
   return (
@@ -186,6 +230,33 @@ export function Settings() {
           </Field>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={blocker.state === 'blocked'}
+        onOpenChange={(open) => {
+          if (!open) blocker.reset?.()
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Unsaved changes</DialogTitle>
+            <DialogDescription>
+              You have unsaved settings changes. Save them before leaving, discard them, or stay on this page.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="bg-transparent p-0 border-0 mx-0 mb-0">
+            <Button variant="outline" size="sm" onClick={() => blocker.reset?.()} disabled={saving}>
+              Stay
+            </Button>
+            <Button variant="destructive" size="sm" onClick={discardAndLeave} disabled={saving}>
+              Discard
+            </Button>
+            <Button size="sm" onClick={saveAndLeave} disabled={saving}>
+              {saving ? 'Saving…' : 'Save & leave'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -17,6 +17,16 @@ import { useBotStore } from '@/stores/botStore'
 import { useProxyStore } from '@/stores/proxyStore'
 import { useNotifyStore } from '@/stores/notifyStore'
 import { useConfigStore } from '@/stores/configStore'
+import { toast, type ToastSeverity } from '@/components/ui/sonner'
+
+// Backend `Notification.level` ∈ {info,success,warn,error}; toast helper
+// uses `warning`. Map across.
+const TOAST_SEVERITY: Record<Notification['level'], ToastSeverity> = {
+  info: 'info',
+  success: 'success',
+  warn: 'warning',
+  error: 'error',
+}
 
 // One-shot bridge mounted from <App>. Subscribes to all Tauri events,
 // hydrates initial state, and unsubscribes on unmount.
@@ -84,6 +94,11 @@ export function useTauriBridge() {
 
     listen<Notification>('notify', (n) => {
       useNotifyStore.getState().pushToast(n)
+      toast[TOAST_SEVERITY[n.level]](n.title, {
+        description: n.body,
+        id: n.id,
+        ...(n.sticky ? { duration: Infinity } : {}),
+      })
     }).then((u) => unlistens.push(u))
 
     return () => {

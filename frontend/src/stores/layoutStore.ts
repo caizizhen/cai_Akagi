@@ -10,14 +10,38 @@ import {
   type TileId,
 } from '@/tiles/defaults'
 
-// Bump the version segment whenever DEFAULT_LAYOUTS changes shape so old
-// saved data doesn't override the new defaults. v5 introduces per-mode
-// (4p / 3p) layout slots; old v4 keys are orphaned in localStorage but
-// harmless.
-const LAYOUTS_KEY_4P = 'akagi.v5.layouts.4p'
-const HIDDEN_KEY_4P = 'akagi.v5.hidden.4p'
-const LAYOUTS_KEY_3P = 'akagi.v5.layouts.3p'
-const HIDDEN_KEY_3P = 'akagi.v5.hidden.3p'
+// Storage keys are stable. The schema version lives *inside* the JSON
+// payload (see `SCHEMA`) so we can evolve the saved shape without ever
+// touching the key name (which used to look like `akagi.v5.*` — easy to
+// confuse with the "Akagi V3" app version).
+//
+// Constraints (`minW` / `minH` / `maxW` / `maxH`) are NOT persisted; they
+// come from `DEFAULT_LAYOUTS` at load time, so changing a constraint
+// propagates without any migration.
+const LAYOUTS_KEY_4P = 'akagi.dashboard.layouts.4p'
+const HIDDEN_KEY_4P = 'akagi.dashboard.hidden.4p'
+const LAYOUTS_KEY_3P = 'akagi.dashboard.layouts.3p'
+const HIDDEN_KEY_3P = 'akagi.dashboard.hidden.3p'
+
+// Bump only when the on-disk *shape* of layouts/hidden actually changes
+// (e.g. wrapping the per-breakpoint object inside something else, or
+// renaming the breakpoint keys). Constraint tweaks do NOT need a bump.
+// Mismatched payloads are discarded → defaults rebuild on next load.
+const SCHEMA = 1
+type StoredEnvelope<T> = { schema: number; data: T }
+
+function envelope<T>(data: T): StoredEnvelope<T> {
+  return { schema: SCHEMA, data }
+}
+
+function unwrap(parsed: unknown): unknown {
+  if (parsed && typeof parsed === 'object' && 'schema' in (parsed as object) && 'data' in (parsed as object)) {
+    const env = parsed as StoredEnvelope<unknown>
+    return env.schema === SCHEMA ? env.data : null
+  }
+  // Unwrapped payload from a pre-envelope save → discard, rebuild from defaults.
+  return null
+}
 
 export type Layouts = Record<Breakpoint, LayoutItem[]>
 export type HiddenSet = Record<Breakpoint, TileId[]>
@@ -44,15 +68,54 @@ function deepClone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v))
 }
 
-// Ensure all four breakpoints exist as arrays. Stale / partial localStorage
-// data (older format, missing keys, non-array values) would otherwise crash
-// downstream `.filter` calls in GameDashboard.
+// Re-apply current dev-set constraints (minW/minH/maxW/maxH) onto a saved
+// item. Saved items only own the user-controlled fields (x/y/w/h); w/h are
+// clamped to whatever the current defaults allow so a tightened maxW or
+// raised minW takes effect on the next load without a version bump.
+// Items not present in DEFAULT_LAYOUTS (e.g. removed tiles) are dropped.
+function mergeItemWithDefault(saved: LayoutItem, def: LayoutItem): LayoutItem {
+  const minW = def.minW ?? 1
+  const minH = def.minH ?? 1
+  const maxW = def.maxW ?? Infinity
+  const maxH = def.maxH ?? Infinity
+  const w = Math.min(Math.max(saved.w ?? def.w, minW), maxW)
+  const h = Math.min(Math.max(saved.h ?? def.h, minH), maxH)
+  return {
+    ...def,
+    x: saved.x ?? def.x,
+    y: saved.y ?? def.y,
+    w,
+    h,
+  }
+}
+
+// Ensure all four breakpoints exist as arrays AND every item has up-to-date
+// constraints. Stale / partial localStorage data (older format, missing
+// keys, non-array values) is replaced from defaults.
 function normaliseLayouts(parsed: unknown, fallback: Layouts): Layouts {
   const fresh = deepClone(fallback)
   if (!parsed || typeof parsed !== 'object') return fresh
   const obj = parsed as Record<string, unknown>
   for (const bp of ['lg', 'md', 'sm', 'xs'] as const) {
-    if (Array.isArray(obj[bp])) fresh[bp] = obj[bp] as Layouts[Breakpoint]
+    if (!Array.isArray(obj[bp])) continue
+    const defByI = new Map(fresh[bp].map((d) => [d.i, d]))
+    const savedByI = new Map(
+      (obj[bp] as LayoutItem[])
+        .filter((s) => s && typeof s === 'object' && typeof s.i === 'string')
+        .map((s) => [s.i, s] as const),
+    )
+    const merged: LayoutItem[] = []
+    // Saved tiles still in defaults — keep position, refresh constraints.
+    for (const [i, saved] of savedByI) {
+      const def = defByI.get(i)
+      if (!def) continue // tile removed from defaults — drop it
+      merged.push(mergeItemWithDefault(saved, def))
+    }
+    // Default tiles missing from save — add fresh (e.g. new tile shipped).
+    for (const def of fresh[bp]) {
+      if (!savedByI.has(def.i)) merged.push({ ...def })
+    }
+    fresh[bp] = merged
   }
   return fresh
 }
@@ -75,7 +138,7 @@ function loadLayouts(key: string, fallback: Layouts): Layouts {
   try {
     const raw = localStorage.getItem(key)
     if (!raw) return deepClone(fallback)
-    return normaliseLayouts(JSON.parse(raw), fallback)
+    return normaliseLayouts(unwrap(JSON.parse(raw)), fallback)
   } catch {
     return deepClone(fallback)
   }
@@ -86,10 +149,20 @@ function loadHidden(key: string, defaults: TileId[]): HiddenSet {
   try {
     const raw = localStorage.getItem(key)
     if (!raw) return normaliseHidden(null, defaults)
-    return normaliseHidden(JSON.parse(raw), defaults)
+    return normaliseHidden(unwrap(JSON.parse(raw)), defaults)
   } catch {
     return normaliseHidden(null, defaults)
   }
+}
+
+// Persist only the user-controllable fields. Constraints are recomputed
+// from defaults at load time, so saving them would just create stale data.
+function stripConstraints(layouts: Layouts): Record<Breakpoint, Pick<LayoutItem, 'i' | 'x' | 'y' | 'w' | 'h'>[]> {
+  const out = {} as Record<Breakpoint, Pick<LayoutItem, 'i' | 'x' | 'y' | 'w' | 'h'>[]>
+  for (const bp of ['lg', 'md', 'sm', 'xs'] as const) {
+    out[bp] = (layouts[bp] ?? []).map(({ i, x, y, w, h }) => ({ i, x, y, w, h }))
+  }
+  return out
 }
 
 function persistMode(
@@ -101,8 +174,8 @@ function persistMode(
   try {
     const lk = mode === '3p' ? LAYOUTS_KEY_3P : LAYOUTS_KEY_4P
     const hk = mode === '3p' ? HIDDEN_KEY_3P : HIDDEN_KEY_4P
-    localStorage.setItem(lk, JSON.stringify(layouts))
-    localStorage.setItem(hk, JSON.stringify(hidden))
+    localStorage.setItem(lk, JSON.stringify(envelope(stripConstraints(layouts))))
+    localStorage.setItem(hk, JSON.stringify(envelope(hidden)))
   } catch {
     /* quota exceeded — ignore */
   }
