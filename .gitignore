@@ -28,6 +28,10 @@ mjai_bot/*/settings.toml
 # Tauri
 gen/
 
+# Bundled python + uv binaries fetched by scripts/fetch-runtime.sh.
+runtime/*
+!runtime/.gitkeep
+
 # util
 mjai_bot/mortal*
 

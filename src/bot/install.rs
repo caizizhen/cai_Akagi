@@ -19,6 +19,7 @@
 
 use crate::bot::manifest::Manifest;
 use crate::bot::registry::BotEntry;
+use crate::bot::runtime::PythonRuntime;
 use crate::event_bus::NotifyBus;
 use crate::schema::Notification;
 use anyhow::{Context, Result, bail};
@@ -74,10 +75,17 @@ pub struct Asset {
 
 /// End-to-end install. Returns the registry entry for the freshly
 /// extracted bot.
+///
+/// When `runtime` is `Some(_)` and the extracted bot has a `pyproject.toml`,
+/// `uv sync` is run as the final step. Failures abort the install (the bot
+/// dir stays in place so the user can retry via Reinstall environment without
+/// re-downloading). When `runtime` is `None`, sync is skipped with a warning
+/// notification — the install is considered successful.
 pub async fn install_from_github_release(
     spec: GithubInstallSpec,
     dest_root: &Path,
     notify: &NotifyBus,
+    runtime: Option<&PythonRuntime>,
 ) -> Result<BotEntry> {
     let mut spec = spec;
     spec.repo = normalize_repo(&spec.repo);
@@ -186,6 +194,33 @@ pub async fn install_from_github_release(
 
     install_result?;
 
+    // Post-install: run `uv sync` so dependency failures surface here rather
+    // than at game-start. Skip silently for pyproject-less bots — only the
+    // explicit Reinstall-environment path treats that as an error.
+    let pyproject = dest_dir.join("pyproject.toml");
+    if pyproject.is_file() {
+        match runtime {
+            Some(rt) => {
+                let _ = notify.send(
+                    Notification::info(format!("Installing {target_name}"))
+                        .body("Installing Python dependencies (uv sync)…")
+                        .sticky()
+                        .id(notify_id.clone()),
+                );
+                rt.ensure_synced(&dest_dir)
+                    .await
+                    .with_context(|| format!("uv sync after install of {target_name}"))?;
+            }
+            None => {
+                let _ = notify.send(
+                    Notification::warn(format!("{target_name} installed without sync"))
+                        .body("No python3+uv runtime found on PATH; deps will be installed at game start.")
+                        .id(notify_id.clone()),
+                );
+            }
+        }
+    }
+
     let _ = notify.send(
         Notification::success(format!("{target_name} installed"))
             .body(format!(
@@ -196,7 +231,6 @@ pub async fn install_from_github_release(
             .id(notify_id),
     );
 
-    let pyproject = dest_dir.join("pyproject.toml");
     Ok(BotEntry {
         name: target_name.clone(),
         dir: dest_dir.clone(),

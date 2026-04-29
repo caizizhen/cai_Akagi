@@ -14,6 +14,7 @@ pub mod manifest;
 pub mod registry;
 pub mod runner;
 pub mod runtime;
+pub mod sync_guard;
 pub mod types;
 
 pub use install::{GithubInstallSpec, install_from_github_release};
@@ -22,4 +23,5 @@ pub use manifest::{BotSource, FieldKind, FieldSpec, Manifest, ManifestBot};
 pub use registry::{BotEntry, BotRegistry};
 pub use runner::{BotRunner, SubprocessBot};
 pub use runtime::{PythonRuntime, RuntimeMode};
+pub use sync_guard::SyncGuard;
 pub use types::BotResponse;

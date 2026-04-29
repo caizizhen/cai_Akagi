@@ -13,15 +13,21 @@
 //! Skipped silently when `uv` or `python` is not on PATH — CI without
 //! the toolchain just sees a passing no-op.
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use akagi::bot::{BotManager, BotRegistry, PythonRuntime};
 use akagi::event_bus::{bot_response_bus, bot_status_bus, notify_bus};
 use akagi::schema::{BotStatus, LoadStage, MjaiEvent, NotifyLevel};
 use tempfile::TempDir;
-use tokio::sync::broadcast;
+use tokio::sync::{Mutex, broadcast};
+
+fn fresh_syncs() -> Arc<Mutex<HashSet<String>>> {
+    Arc::new(Mutex::new(HashSet::new()))
+}
 
 fn bin(name: &str) -> Option<PathBuf> {
     which::which(name).ok()
@@ -95,10 +101,11 @@ async fn loading_emits_syncing_then_spawning_then_ready() {
         runtime,
         registry,
         "echo".into(),
-            String::new(),
+        String::new(),
         response_bus,
         status_bus,
         notify,
+        fresh_syncs(),
     );
 
     // First-time spawn: ensure_synced creates the venv (no deps to
@@ -190,6 +197,7 @@ async fn second_spawn_skips_uv_sync_via_stamp() {
             response_bus,
             status_bus,
             notify,
+            fresh_syncs(),
         );
         tokio::time::timeout(
             Duration::from_secs(60),
@@ -216,10 +224,11 @@ async fn second_spawn_skips_uv_sync_via_stamp() {
         runtime,
         registry,
         "echo".into(),
-            String::new(),
+        String::new(),
         response_bus,
         status_bus,
         notify,
+        fresh_syncs(),
     );
 
     let started = std::time::Instant::now();

@@ -14,6 +14,7 @@ pub mod util;
 
 use clap::Parser;
 use std::sync::Arc;
+use tauri::Manager;
 use tracing::{error, info, warn};
 
 pub fn run() {
@@ -70,25 +71,43 @@ pub fn run() {
     let analysis_bus_for_runner = analysis_bus.clone();
     let analysis_cache_for_runner = analysis_cache.clone();
 
-    let state = ipc::AppState::new(
-        cfg,
-        config_path,
-        session.clone(),
-        mjai_bus.clone(),
-        bot_response_bus.clone(),
-        bot_status_bus.clone(),
-        proxy_status_bus.clone(),
-        notify_bus.clone(),
-        analysis_bus.clone(),
-        game_tracker,
-        analysis_cache,
-    );
-
     tauri::Builder::default()
         .invoke_handler(crate::ipc_handlers!())
         .setup({
-            let state = state.clone();
+            // AppState constructed *inside* setup() so the python+uv
+            // runtime can be located using `resource_dir` — bundled
+            // binaries live under `<resource_dir>/runtime/...` and that
+            // path is only resolvable once the AppHandle exists.
             move |app| {
+                let resource_dir = app.path().resource_dir().ok();
+                let runtime = bot::PythonRuntime::locate(resource_dir.as_deref()).ok();
+                match &runtime {
+                    Some(rt) => info!(
+                        "bot runtime: python={} uv={} mode={:?}",
+                        rt.python().display(),
+                        rt.uv().display(),
+                        rt.mode()
+                    ),
+                    None => warn!(
+                        "no python3+uv runtime found (neither bundled nor on PATH); bot install/sync will be unavailable"
+                    ),
+                }
+
+                let state = ipc::AppState::new(
+                    cfg,
+                    config_path,
+                    session.clone(),
+                    mjai_bus.clone(),
+                    bot_response_bus.clone(),
+                    bot_status_bus.clone(),
+                    proxy_status_bus.clone(),
+                    notify_bus.clone(),
+                    analysis_bus.clone(),
+                    game_tracker,
+                    analysis_cache,
+                    runtime.clone(),
+                );
+
                 ipc::install(&app.handle(), state.clone())?;
 
                 // Spawn tracker + analysis loops inside the Tauri Tokio
@@ -110,9 +129,12 @@ pub fn run() {
                     let resp = bot_response_bus.clone();
                     let bs = bot_status_bus.clone();
                     let nb = notify_bus.clone();
+                    let rt = runtime.clone();
+                    let syncs = state.syncs_in_flight.clone();
                     tauri::async_runtime::spawn(async move {
                         if let Err(e) =
-                            spawn_bot_manager(bot_cfg, mjai_for_bot, resp, bs, nb).await
+                            spawn_bot_manager(bot_cfg, mjai_for_bot, resp, bs, nb, rt, syncs)
+                                .await
                         {
                             error!("Bot manager failed: {e:#}");
                         }
@@ -159,6 +181,8 @@ async fn spawn_bot_manager(
     response_bus: event_bus::BotResponseBus,
     status_bus: event_bus::BotStatusBus,
     notify_bus: event_bus::NotifyBus,
+    runtime: Option<bot::PythonRuntime>,
+    syncs_in_flight: Arc<tokio::sync::Mutex<std::collections::HashSet<String>>>,
 ) -> anyhow::Result<()> {
     let bot_dir = util::resolve_dir(std::path::Path::new(&cfg.dir));
     let registry = bot::BotRegistry::scan(&bot_dir)?;
@@ -174,13 +198,11 @@ async fn spawn_bot_manager(
         }
     }
 
-    let runtime = bot::PythonRuntime::locate(None)?;
-    info!(
-        "bot runtime: python={} uv={} mode={:?}",
-        runtime.python().display(),
-        runtime.uv().display(),
-        runtime.mode()
-    );
+    let runtime = runtime.ok_or_else(|| {
+        anyhow::anyhow!(
+            "bot mode is enabled but no python3+uv runtime was found on PATH"
+        )
+    })?;
 
     let manager = bot::BotManager::new(
         runtime,
@@ -190,6 +212,7 @@ async fn spawn_bot_manager(
         response_bus,
         status_bus,
         notify_bus,
+        syncs_in_flight,
     );
     let rx = mjai.subscribe();
     manager.run(rx).await

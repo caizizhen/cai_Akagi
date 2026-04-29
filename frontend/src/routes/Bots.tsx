@@ -328,6 +328,7 @@ function BotSettingsDrawer({ name, open, onOpenChange }: { name: string; open: b
   const [data, setData] = useState<BotSettings | null>(null)
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [saving, setSaving] = useState(false)
+  const [resyncing, setResyncing] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
@@ -350,6 +351,18 @@ function BotSettingsDrawer({ name, open, onOpenChange }: { name: string; open: b
       setErr(String(e))
     } finally {
       setSaving(false)
+    }
+  }
+
+  const reinstallEnv = async () => {
+    setResyncing(true)
+    setErr(null)
+    try {
+      await invoke('sync_bot_deps', { name, force: true })
+    } catch (e) {
+      setErr(String(e))
+    } finally {
+      setResyncing(false)
     }
   }
 
@@ -379,11 +392,21 @@ function BotSettingsDrawer({ name, open, onOpenChange }: { name: string; open: b
 
         {err && <span className="text-sm text-red-400">{err}</span>}
 
-        <div className="flex justify-end gap-2 mt-auto pt-2 border-t border-border">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={save} disabled={saving || !data}>
-            {saving ? 'Saving…' : 'Save'}
+        <div className="flex justify-between gap-2 mt-auto pt-2 border-t border-border">
+          <Button
+            variant="outline"
+            onClick={reinstallEnv}
+            disabled={saving || resyncing}
+            title="Wipe and recreate the Python virtualenv for this bot"
+          >
+            {resyncing ? 'Reinstalling…' : 'Reinstall environment'}
           </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button onClick={save} disabled={saving || resyncing || !data}>
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+          </div>
         </div>
       </SheetContent>
     </Sheet>

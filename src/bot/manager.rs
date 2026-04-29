@@ -29,10 +29,13 @@ use crate::bot::manifest;
 use crate::bot::registry::BotRegistry;
 use crate::bot::runner::{BotRunner, SubprocessBot};
 use crate::bot::runtime::PythonRuntime;
+use crate::bot::sync_guard::SyncGuard;
 use crate::event_bus::{BotResponseBus, BotStatusBus, NotifyBus};
 use crate::schema::{BotStatus, LoadStage, MjaiEvent, Notification};
 use anyhow::{Context, Result, bail};
-use tokio::sync::broadcast;
+use std::collections::HashSet;
+use std::sync::Arc;
+use tokio::sync::{Mutex, broadcast};
 use tracing::{debug, error, info, warn};
 
 pub struct BotManager {
@@ -53,9 +56,14 @@ pub struct BotManager {
     out_tx: BotResponseBus,
     status_tx: BotStatusBus,
     notify_tx: NotifyBus,
+    /// Shared with the IPC layer so a user-triggered Reinstall environment
+    /// and an in-flight game-start sync can't run `uv sync` against the same
+    /// venv simultaneously.
+    syncs_in_flight: Arc<Mutex<HashSet<String>>>,
 }
 
 impl BotManager {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         runtime: PythonRuntime,
         registry: BotRegistry,
@@ -64,6 +72,7 @@ impl BotManager {
         out_tx: BotResponseBus,
         status_tx: BotStatusBus,
         notify_tx: NotifyBus,
+        syncs_in_flight: Arc<Mutex<HashSet<String>>>,
     ) -> Self {
         let active_name = active_4p.clone();
         Self {
@@ -78,6 +87,7 @@ impl BotManager {
             out_tx,
             status_tx,
             notify_tx,
+            syncs_in_flight,
         }
     }
 
@@ -244,7 +254,29 @@ impl BotManager {
                 .id(load_id.clone()),
         );
 
-        if let Err(e) = self.runtime.ensure_synced(&entry.dir).await {
+        // Acquire the per-bot sync lock so a Reinstall-environment IPC
+        // call (or any other in-flight sync) doesn't race us against the
+        // same venv.
+        let sync_guard = match SyncGuard::acquire(&self.syncs_in_flight, &bot_name).await {
+            Some(g) => g,
+            None => {
+                let msg = format!("sync already in progress for {bot_name}");
+                self.emit_status(BotStatus::Error {
+                    bot: bot_name.clone(),
+                    error: msg.clone(),
+                });
+                self.emit_notify(
+                    Notification::error("Bot dependency install failed")
+                        .body(msg.clone())
+                        .id(load_id.clone()),
+                );
+                bail!(msg);
+            }
+        };
+
+        let sync_result = self.runtime.ensure_synced(&entry.dir).await;
+        drop(sync_guard);
+        if let Err(e) = sync_result {
             let msg = format!("uv sync failed: {e:#}");
             self.emit_status(BotStatus::Error {
                 bot: bot_name.clone(),
@@ -454,6 +486,10 @@ mod tests {
         BotRegistry::default()
     }
 
+    fn fresh_syncs() -> Arc<Mutex<HashSet<String>>> {
+        Arc::new(Mutex::new(HashSet::new()))
+    }
+
     fn manager_with_mock(
         replies: Vec<BotResponse>,
     ) -> (
@@ -478,6 +514,7 @@ mod tests {
             bus,
             status,
             notify,
+            fresh_syncs(),
         );
         // Pre-seat the actor and inject the mock so we don't go through
         // the registry / runtime path (covered by runner.rs tests).
@@ -678,6 +715,7 @@ mod tests {
             bus,
             status,
             notify,
+            fresh_syncs(),
         );
         mgr.actor_id = Some(2);
         mgr.runner = Some(Box::new(MockBotRunner::failing("kaboom")));
@@ -717,6 +755,7 @@ mod tests {
             bus,
             status,
             notify,
+            fresh_syncs(),
         );
 
         let err = mgr
@@ -755,6 +794,7 @@ mod tests {
             bus,
             status,
             notify,
+            fresh_syncs(),
         );
         // Should not panic / error even with no runner.
         mgr.handle(dahai(0)).await.unwrap();
@@ -779,6 +819,7 @@ mod tests {
             bot_bus,
             status,
             notify,
+            fresh_syncs(),
         );
         mgr.actor_id = Some(2);
         let (mock, _calls) = MockBotRunner::new(vec![]);

@@ -129,6 +129,18 @@ impl PythonRuntime {
     }
 }
 
+/// Wipe the stamp file and the venv so the next `ensure_synced` runs from
+/// scratch. Used by the user-triggered "Reinstall environment" path —
+/// stamp-only invalidation lets `uv sync` re-run, but uv's sync is
+/// incremental against an existing venv, so a corrupted venv (the actual
+/// failure mode) can survive a stamp-only retry. Wiping the venv forces a
+/// clean seed. Errors are swallowed — missing files are the expected case.
+pub async fn reset_sync_state(bot_dir: &Path) {
+    let akagi = bot_dir.join(AKAGI_DIR);
+    let _ = tokio::fs::remove_file(akagi.join(STAMP_FILE)).await;
+    let _ = tokio::fs::remove_dir_all(akagi.join(VENV_DIR)).await;
+}
+
 fn try_bundled(resource_dir: &Path) -> Option<PythonRuntime> {
     let triple = host_triple();
     let py = resource_dir
@@ -298,5 +310,29 @@ mod tests {
     fn try_bundled_returns_none_when_runtime_dir_empty() {
         let tmp = TempDir::new().unwrap();
         assert!(try_bundled(tmp.path()).is_none());
+    }
+
+    #[tokio::test]
+    async fn reset_sync_state_removes_stamp_and_venv() {
+        let tmp = TempDir::new().unwrap();
+        let akagi = tmp.path().join(AKAGI_DIR);
+        let venv = akagi.join(VENV_DIR);
+        let stamp = akagi.join(STAMP_FILE);
+        std::fs::create_dir_all(venv.join("bin")).unwrap();
+        std::fs::write(stamp, "v1|abc").unwrap();
+        std::fs::write(venv.join("bin").join("python"), "").unwrap();
+
+        reset_sync_state(tmp.path()).await;
+
+        assert!(!akagi.join(STAMP_FILE).exists(), "stamp should be removed");
+        assert!(!akagi.join(VENV_DIR).exists(), "venv should be removed");
+        // .akagi/ dir itself may stay — only the wipe targets are stamp + venv.
+    }
+
+    #[tokio::test]
+    async fn reset_sync_state_is_silent_when_paths_missing() {
+        let tmp = TempDir::new().unwrap();
+        // No `.akagi/` dir at all — must not panic.
+        reset_sync_state(tmp.path()).await;
     }
 }

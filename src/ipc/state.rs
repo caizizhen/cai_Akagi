@@ -15,6 +15,7 @@
 //! always consistent with the action that just succeeded.
 
 use crate::analysis::runner::AnalysisCache;
+use crate::bot::PythonRuntime;
 use crate::config::AppConfig;
 use crate::event_bus::{
     AnalysisBus, BotResponseBus, BotStatusBus, MjaiBus, NotifyBus, ProxyStatusBus,
@@ -22,6 +23,7 @@ use crate::event_bus::{
 use crate::game_state::GameTracker;
 use crate::logger::Session;
 use crate::schema::{BotStatus, ProxyStatus};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify, RwLock, oneshot};
@@ -74,6 +76,15 @@ pub struct AppState {
     /// Latest analysis result, populated by the analysis runner. Read by
     /// the `get_analysis` Tauri command for one-shot queries.
     pub analysis_cache: AnalysisCache,
+
+    /// Bundled-or-system Python + uv. `None` on dev boxes lacking both —
+    /// install/sync commands surface a friendly error instead of panicking;
+    /// the bot manager refuses to start when bot mode is enabled.
+    pub runtime: Option<PythonRuntime>,
+    /// Names of bots whose `uv sync` is currently in flight. Both the
+    /// `sync_bot_deps` command and `BotManager::spawn_runner` acquire-or-bail
+    /// so two parallel syncs against the same venv can't trample each other.
+    pub syncs_in_flight: Arc<Mutex<HashSet<String>>>,
 }
 
 impl AppState {
@@ -90,6 +101,7 @@ impl AppState {
         analysis_bus: AnalysisBus,
         game_tracker: Arc<Mutex<GameTracker>>,
         analysis_cache: AnalysisCache,
+        runtime: Option<PythonRuntime>,
     ) -> Self {
         Self {
             config: Arc::new(RwLock::new(config)),
@@ -105,6 +117,8 @@ impl AppState {
             proxy_control: Arc::new(Mutex::new(ProxyControl::default())),
             game_tracker,
             analysis_cache,
+            runtime,
+            syncs_in_flight: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 }

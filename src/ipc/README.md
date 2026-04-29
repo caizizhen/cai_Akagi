@@ -57,6 +57,10 @@ without waiting for the next event.
 | `update_config`  | `new_config`          | `()`                     | Persists to TOML; subsystems do **not** auto-restart |
 | `list_bots`      | —                     | `Vec<BotInfo>`           | Re-scans `cfg.bot.dir`       |
 | `set_active_bot` | `mode, name`          | `()`                     | Updates + persists `bot.active_4p` or `bot.active_3p` (`mode` ∈ `"4p"` / `"3p"`); empty `name` clears the slot |
+| `install_bot_from_github` | `repo, asset_glob?, name?` | `BotInfo`     | Download + extract; runs `uv sync` post-install if a runtime is available |
+| `update_bot_from_manifest` | `name`            | `BotInfo`                | Reinstall from the source declared in the bot's `manifest.toml` |
+| `sync_bot_deps`  | `name, force`         | `()`                     | Re-runs `uv sync` for an installed bot. `force=true` wipes `.akagi/synced.stamp` and `.akagi/venv/` first (used by the per-bot Reinstall environment button). Per-bot `SyncGuard` rejects concurrent calls. |
+| `delete_bot`     | `name`                | `()`                     | Refuses if the bot is the active 4p/3p; refuses paths that escape `bot.dir` |
 | `start_proxy`    | —                     | `()` / `Err("…running")` | Spawns supervisor; idempotent guard |
 | `stop_proxy`     | —                     | `()`                     | Sends shutdown to current proxy task |
 | `get_status`     | —                     | `Snapshot`               | One-shot dump (config, bot_status, proxy_status, log_dir) |

@@ -20,7 +20,14 @@ bridge to them.
   + `uv` (or falls back to system `python3`/`uv`); runs `uv sync` on
   demand against a bot's `pyproject.toml`; produces a `tokio::process::Command`
   ready to spawn the bot. Sync is idempotent via a `mtime:size` stamp at
-  `<bot>/.akagi/synced.stamp`.
+  `<bot>/.akagi/synced.stamp`. `reset_sync_state()` wipes the stamp + venv
+  for the user-triggered "Reinstall environment" path. See "Bundled
+  runtime" below for how the bundled binaries are fetched and shipped.
+- `sync_guard` — `SyncGuard`: per-bot mutual exclusion for `uv sync`.
+  Both `BotManager::spawn_runner` (game-start sync) and the IPC
+  `sync_bot_deps` command (Reinstall environment) acquire-or-bail on the
+  bot name through a shared `Arc<Mutex<HashSet<String>>>` so two parallel
+  syncs against the same venv can't trample each other.
 - `runner` — `BotRunner` async trait + `SubprocessBot` impl. Talks JSONL
   over stdin/stdout, pumps stderr into `tracing` (`bot=<name>` field),
   enforces a 5 s default react timeout, and `kill_on_drop(true)` so a
@@ -183,13 +190,75 @@ Behaviour:
   zips like `mortal-v0.5.0/…`), strips it.
 - Validates that the extracted layout contains `bot.py` at the top.
 - Atomic rename into `mjai_bot/<name>/`.
+- Post-install: if a `PythonRuntime` is available and the extracted bot
+  has a `pyproject.toml`, runs `uv sync` so dependency failures surface
+  here instead of at game-start. On failure the bot dir stays in place
+  so the user can retry via the per-bot Reinstall environment button
+  without re-downloading. With no runtime available, sync is skipped
+  with a `warn` toast and the install still succeeds.
 - Progress is reported through `NotifyBus` with sticky id
-  `bot-install-<name>` (info → info → success).
+  `bot-install-<name>` (info → info → info → success).
 
 If the bot's `manifest.toml` declares a `[bot.source]` block, calling
 `update_bot_from_manifest(name)` re-runs the install using the recorded
 repo/glob. The previous `mjai_bot/<name>/` is removed first — settings
 and other bot-local files are not preserved.
+
+### Reinstall environment
+
+The `sync_bot_deps(name, force)` IPC command re-runs `uv sync` for an
+already-installed bot. With `force = true` (the only mode the frontend
+button uses) the `.akagi/synced.stamp` and `.akagi/venv/` are wiped first
+so a corrupted venv is rebuilt from scratch — incremental sync against a
+broken venv can otherwise mask the breakage. Progress goes to `NotifyBus`
+under sticky id `bot-sync-<name>`. The shared `SyncGuard` rejects a
+second concurrent call for the same bot.
+
+## Bundled runtime
+
+End users get a packaged Akagi build that ships its own python and uv —
+no system install required. The two binaries live under
+`<resource_dir>/runtime/{python,uv}/<target-triple>/` and are picked up
+by `PythonRuntime::locate(Some(resource_dir))` in `RuntimeMode::Bundled`.
+On a dev box without bundled binaries, `locate` falls through to
+`RuntimeMode::System` and uses whatever's on PATH.
+
+### Layout
+
+```
+runtime/
+├── python/<triple>/        # python-build-standalone tree (3.12.x)
+│   ├── bin/python3         (linux/mac)
+│   ├── lib/...
+│   └── python.exe          (windows)
+└── uv/<triple>/
+    ├── uv                  (linux/mac)
+    ├── uv.exe              (windows)
+    └── uvx[.exe]
+```
+
+`<triple>` is the cargo target triple (e.g. `x86_64-unknown-linux-gnu`,
+`aarch64-apple-darwin`, `x86_64-pc-windows-msvc`).
+
+### Fetching locally
+
+```sh
+scripts/fetch-runtime.sh                          # host triple
+scripts/fetch-runtime.sh x86_64-pc-windows-msvc   # cross-target
+scripts/fetch-runtime.sh --force                  # re-download
+```
+
+Override the versions via env vars: `PYTHON_VERSION`, `PBS_RELEASE`,
+`UV_VERSION`. The script is idempotent — re-runs are no-ops once the
+target binaries exist.
+
+### Bundling
+
+`tauri.conf.json` ships the tree via `bundle.resources = ["runtime/**/*"]`.
+The `runtime/` directory is `.gitignore`'d (`runtime/*` with
+`!runtime/.gitkeep` exception) so the placeholder file keeps the glob
+non-empty even before `fetch-runtime.sh` runs. CI must re-run the
+script once per matrix target before `tauri build`.
 
 ## Why subprocess
 

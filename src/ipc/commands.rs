@@ -8,6 +8,8 @@
 use crate::analysis::result::AnalysisResult;
 use crate::bot::install::{self, GithubInstallSpec};
 use crate::bot::manifest::{self, BotSource};
+use crate::bot::runtime;
+use crate::bot::sync_guard::SyncGuard;
 use crate::bot::{BotEntry, BotRegistry};
 use crate::config::AppConfig;
 use crate::game_state::mahgen_view::MahgenView;
@@ -167,9 +169,14 @@ pub async fn install_bot_from_github(
         asset_glob,
         name,
     };
-    let entry = install::install_from_github_release(spec, &resolved, &state.notify_bus)
-        .await
-        .map_err(|e| format!("install: {e:#}"))?;
+    let entry = install::install_from_github_release(
+        spec,
+        &resolved,
+        &state.notify_bus,
+        state.runtime.as_ref(),
+    )
+    .await
+    .map_err(|e| format!("install: {e:#}"))?;
     Ok(entry_to_info(&entry))
 }
 
@@ -207,10 +214,74 @@ pub async fn update_bot_from_manifest(
         asset_glob,
         name: Some(name.clone()),
     };
-    let new_entry = install::install_from_github_release(spec, &resolved, &state.notify_bus)
-        .await
-        .map_err(|e| format!("install: {e:#}"))?;
+    let new_entry = install::install_from_github_release(
+        spec,
+        &resolved,
+        &state.notify_bus,
+        state.runtime.as_ref(),
+    )
+    .await
+    .map_err(|e| format!("install: {e:#}"))?;
     Ok(entry_to_info(&new_entry))
+}
+
+/// Re-run `uv sync` for an installed bot. Frontend wires this to the
+/// "Reinstall environment" button under Configure. `force=true` wipes
+/// `.akagi/synced.stamp` and `.akagi/venv` first so a corrupted venv is
+/// rebuilt from scratch (incremental sync can otherwise mask the breakage).
+/// Reports progress + outcome through `NotifyBus` with sticky id
+/// `bot-sync-<name>`. Refuses to start a second concurrent sync for the
+/// same bot.
+#[tauri::command]
+pub async fn sync_bot_deps(
+    name: String,
+    force: bool,
+    state: State<'_, AppState>,
+) -> CmdResult<()> {
+    let dir = state.config.read().await.bot.dir.clone();
+    let resolved = resolve_dir(Path::new(&dir));
+    let registry = BotRegistry::scan(&resolved).map_err(|e| format!("scan bots: {e:#}"))?;
+    let entry = registry
+        .find(&name)
+        .ok_or_else(|| format!("bot {name:?} not found"))?
+        .clone();
+    let runtime = state.runtime.as_ref().ok_or_else(|| {
+        "Python runtime not available — install python3 and uv on PATH".to_string()
+    })?;
+
+    let _guard = SyncGuard::acquire(&state.syncs_in_flight, &name)
+        .await
+        .ok_or_else(|| format!("sync already in progress for {name}"))?;
+
+    let notify_id = format!("bot-sync-{name}");
+    let _ = state.notify_bus.send(
+        Notification::info(format!("Syncing {name}"))
+            .body("Rebuilding Python environment (uv sync)…")
+            .sticky()
+            .id(notify_id.clone()),
+    );
+
+    if force {
+        runtime::reset_sync_state(&entry.dir).await;
+    }
+
+    match runtime.ensure_synced(&entry.dir).await {
+        Ok(()) => {
+            let _ = state.notify_bus.send(
+                Notification::success(format!("{name} environment ready")).id(notify_id),
+            );
+            Ok(())
+        }
+        Err(e) => {
+            let msg = format!("uv sync failed: {e:#}");
+            let _ = state.notify_bus.send(
+                Notification::error(format!("Sync failed for {name}"))
+                    .body(msg.clone())
+                    .id(notify_id),
+            );
+            Err(msg)
+        }
+    }
 }
 
 #[tauri::command]
@@ -365,6 +436,7 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::update_bot_settings,
             $crate::ipc::commands::install_bot_from_github,
             $crate::ipc::commands::update_bot_from_manifest,
+            $crate::ipc::commands::sync_bot_deps,
             $crate::ipc::commands::delete_bot,
             $crate::ipc::commands::start_proxy,
             $crate::ipc::commands::stop_proxy,
