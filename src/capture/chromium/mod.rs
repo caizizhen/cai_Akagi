@@ -11,6 +11,7 @@
 //! Akagi-spawned browser window.
 
 pub mod cdp;
+pub mod cft;
 pub mod detect;
 pub mod launch;
 pub mod profile;
@@ -33,9 +34,12 @@ impl ChromiumBackend {
         Self { cfg }
     }
 
-    /// Resolve the chrome executable: explicit `cfg.executable`, or first
-    /// detected system browser, or installed Chrome-for-Testing. Returns
-    /// `Err` with a user-friendly message if nothing usable was found.
+    /// Resolve the chrome executable. Resolution order:
+    /// 1. Explicit `cfg.executable` if set (must exist).
+    /// 2. If `force_cft = false`: first auto-detected system browser.
+    /// 3. Installed Chrome-for-Testing (latest version, or pinned via
+    ///    `cfg.cft_channel` if a literal version is installed).
+    /// 4. Error pointing the user at the Settings UI to install CfT.
     fn resolve_executable(&self) -> Result<PathBuf> {
         if !self.cfg.executable.is_empty() {
             let p = PathBuf::from(&self.cfg.executable);
@@ -54,11 +58,15 @@ impl ChromiumBackend {
             }
         }
 
-        // CfT fallback comes in Phase 2; for v1 we surface a clean error
-        // rather than silently failing.
+        let pinned = cft::Channel::parse(&self.cfg.cft_channel);
+        if let Some(exe) = cft::installed_executable(&pinned) {
+            return Ok(exe);
+        }
+
         anyhow::bail!(
-            "no Chromium-family browser detected and Chrome-for-Testing fallback is not yet implemented. \
-             Install Google Chrome / Chromium / Edge, or set capture.chromium.executable explicitly."
+            "no Chromium-family browser detected and no Chrome-for-Testing installed. \
+             Open Settings → Capture and click Download to install Chrome for Testing, \
+             or set capture.chromium.executable explicitly."
         )
     }
 }

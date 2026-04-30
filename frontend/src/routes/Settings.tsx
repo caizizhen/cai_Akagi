@@ -388,9 +388,112 @@ function CaptureCard({
                 placeholder="https://game.maj-soul.com/1/"
               />
             </Field>
+            <Toggle
+              label="Force Chrome for Testing"
+              value={chromium.force_cft}
+              onChange={(v) => setChromium({ force_cft: v })}
+            />
+            <CftPanel chromium={chromium} setChromium={setChromium} />
           </>
         )}
       </CardContent>
     </Card>
+  )
+}
+
+function CftPanel({
+  chromium,
+  setChromium,
+}: {
+  chromium: AppConfig['capture']['chromium']
+  setChromium: (patch: Partial<AppConfig['capture']['chromium']>) => void
+}) {
+  const [installed, setInstalled] = useState<string[] | null>(null)
+  const [busy, setBusy] = useState<'idle' | 'downloading' | 'removing'>('idle')
+
+  const refresh = async () => {
+    try {
+      const list = await invoke<string[]>('list_cft_installed')
+      setInstalled(list)
+    } catch {
+      setInstalled([])
+    }
+  }
+
+  useEffect(() => {
+    refresh()
+  }, [])
+
+  const download = async () => {
+    setBusy('downloading')
+    try {
+      await invoke<string>('download_chrome_for_testing', {
+        channel: chromium.cft_channel || 'stable',
+      })
+      await refresh()
+    } catch (e) {
+      console.error('CfT download failed:', e)
+    } finally {
+      setBusy('idle')
+    }
+  }
+
+  const remove = async (version: string) => {
+    setBusy('removing')
+    try {
+      await invoke('remove_chrome_for_testing', { version })
+      await refresh()
+    } catch (e) {
+      console.error('CfT remove failed:', e)
+    } finally {
+      setBusy('idle')
+    }
+  }
+
+  return (
+    <div className="grid gap-2 rounded-md border border-border/50 p-3">
+      <div className="flex items-center justify-between">
+        <Label>Chrome for Testing</Label>
+        <span className="text-xs text-muted-foreground">
+          {installed === null
+            ? 'Loading…'
+            : installed.length === 0
+              ? 'None installed'
+              : `${installed.length} installed`}
+        </span>
+      </div>
+      <Field label="Channel / version" hint='"stable" / "beta" / "dev" / "canary" or a literal version like "131.0.6778.85".'>
+        <Input
+          value={chromium.cft_channel}
+          onChange={(e) => setChromium({ cft_channel: e.target.value })}
+          placeholder="stable"
+        />
+      </Field>
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={refresh} disabled={busy !== 'idle'}>
+          Refresh
+        </Button>
+        <Button onClick={download} disabled={busy !== 'idle'} size="sm">
+          {busy === 'downloading' ? 'Downloading…' : 'Download'}
+        </Button>
+      </div>
+      {installed && installed.length > 0 && (
+        <ul className="grid gap-1 text-sm">
+          {installed.map((v) => (
+            <li key={v} className="flex items-center justify-between rounded bg-muted/40 px-2 py-1">
+              <span>{v}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => remove(v)}
+                disabled={busy !== 'idle'}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }

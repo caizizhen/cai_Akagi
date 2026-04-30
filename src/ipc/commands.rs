@@ -356,6 +356,52 @@ pub async fn detect_system_chrome() -> CmdResult<Vec<crate::capture::chromium::d
     Ok(crate::capture::chromium::detect::detect_system_browsers())
 }
 
+/// List Chrome-for-Testing versions currently installed under
+/// `<user_config_root>/chrome-for-testing/`. Newest first. Empty when
+/// nothing is installed or the platform isn't supported by CfT.
+#[tauri::command]
+pub async fn list_cft_installed() -> CmdResult<Vec<String>> {
+    Ok(crate::capture::chromium::cft::list_installed())
+}
+
+/// Download + extract Chrome-for-Testing for the current platform.
+/// `channel` is interpreted as: `"stable"` / `"beta"` / `"dev"` /
+/// `"canary"` (channel pin) or any literal version string (e.g.
+/// `"131.0.6778.85"`). Empty string ≡ `"stable"`. Returns the
+/// installed version.
+///
+/// Progress is reported through `NotifyBus` with sticky id
+/// `capture-cft-download` so the frontend can show a single live toast.
+#[tauri::command]
+pub async fn download_chrome_for_testing(
+    channel: Option<String>,
+    state: State<'_, AppState>,
+) -> CmdResult<String> {
+    let raw = channel.unwrap_or_default();
+    let parsed = crate::capture::chromium::cft::Channel::parse(&raw);
+    crate::capture::chromium::cft::install(&parsed, &state.notify_bus)
+        .await
+        .map_err(|e| format!("install Chrome for Testing: {e:#}"))
+}
+
+/// Remove an installed Chrome-for-Testing version. No-op when the
+/// version isn't installed.
+#[tauri::command]
+pub async fn remove_chrome_for_testing(
+    version: String,
+    state: State<'_, AppState>,
+) -> CmdResult<()> {
+    if version.is_empty() || version.contains('/') || version.contains('\\') || version.contains("..") {
+        return Err(format!("invalid CfT version {version:?}"));
+    }
+    crate::capture::chromium::cft::remove(&version)
+        .map_err(|e| format!("remove Chrome for Testing: {e:#}"))?;
+    let _ = state
+        .notify_bus
+        .send(Notification::success(format!("Removed Chrome for Testing {version}")));
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn stop_proxy(state: State<'_, AppState>) -> CmdResult<()> {
     let (stop, force_close) = {
@@ -524,6 +570,9 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::stop_capture,
             $crate::ipc::commands::restart_capture,
             $crate::ipc::commands::detect_system_chrome,
+            $crate::ipc::commands::list_cft_installed,
+            $crate::ipc::commands::download_chrome_for_testing,
+            $crate::ipc::commands::remove_chrome_for_testing,
             $crate::ipc::commands::get_status,
             $crate::ipc::commands::get_log_dir,
             $crate::ipc::commands::get_analysis,
