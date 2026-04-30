@@ -16,7 +16,7 @@ use crate::game_state::mahgen_view::MahgenView;
 use crate::game_state::snapshot::GameStateSnapshot;
 use crate::ipc::proxy_supervisor::spawn_proxy_supervisor;
 use crate::ipc::state::AppState;
-use crate::schema::{BotInfo, BotSettings, Notification, Snapshot};
+use crate::schema::{BotInfo, BotSettings, HoraScoreInfo, Notification, Snapshot};
 use crate::util::resolve_dir;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -356,6 +356,28 @@ pub async fn get_game_snapshot(
     Ok(state.game_tracker.lock().await.snapshot())
 }
 
+/// Score a hypothetical bot hora (ron or tsumo) against the live engine
+/// state. The bot's own `hora` mjai response carries no score data
+/// (`deltas` is only populated on the inbound mjai event from the platform
+/// after the win is confirmed). The frontend's `BotActionTile` calls this
+/// to display "+8000點" beside the action label.
+///
+/// Returns `None` when no game is in progress, when the actor's hand isn't
+/// a valid agari shape, or when the winning tile can't be inferred from
+/// the live state (no recent discard for ron / no recent draw for tsumo).
+#[tauri::command]
+pub async fn compute_bot_hora_score(
+    actor: u8,
+    is_tsumo: bool,
+    state: State<'_, AppState>,
+) -> CmdResult<Option<HoraScoreInfo>> {
+    Ok(state
+        .game_tracker
+        .lock()
+        .await
+        .evaluate_hora(actor, is_tsumo))
+}
+
 /// Pre-encoded mahgen DSL strings ready for the frontend `<mah-gen>`
 /// element. Built from the same snapshot as `get_game_snapshot` — call
 /// whichever the UI surface prefers; both are O(34 tiles) to generate.
@@ -445,6 +467,7 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::get_analysis,
             $crate::ipc::commands::get_game_snapshot,
             $crate::ipc::commands::get_mahgen_view,
+            $crate::ipc::commands::compute_bot_hora_score,
         ]
     };
 }

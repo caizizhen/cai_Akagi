@@ -27,8 +27,9 @@
 //! ready to be exposed when the frontend needs it.
 
 use crate::game_state::convert;
+use crate::game_state::score::{evaluate_hora_3p, evaluate_hora_4p};
 use crate::game_state::snapshot::GameStateSnapshot;
-use crate::schema::MjaiEvent as AkagiEvent;
+use crate::schema::{HoraScoreInfo, MjaiEvent as AkagiEvent};
 use anyhow::Result;
 use riichienv_core::rule::GameRule;
 use riichienv_core::state::GameState;
@@ -179,6 +180,18 @@ impl GameTracker {
     /// `Some(num_players)` if a game is in progress.
     pub fn num_players(&self) -> Option<u8> {
         self.state.as_ref().map(|tg| tg.num_players())
+    }
+
+    /// Score a hypothetical hora by `actor` against the live engine state.
+    /// Returns `None` when no game is in progress, the hand isn't a winning
+    /// shape, or the winning tile can't be inferred (no recent draw / discard).
+    /// Routes to the 4p or 3p evaluator based on the active engine.
+    pub fn evaluate_hora(&self, actor: u8, is_tsumo: bool) -> Option<HoraScoreInfo> {
+        match &self.state {
+            Some(TrackedGame::Four(s)) => evaluate_hora_4p(s, actor, is_tsumo),
+            Some(TrackedGame::Three(s)) => evaluate_hora_3p(s, actor, is_tsumo),
+            None => None,
+        }
     }
 
     /// Borrow the live engine state. Returns `None` for non-4p games or no

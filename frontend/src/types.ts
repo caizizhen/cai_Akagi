@@ -204,3 +204,13 @@ export type MahgenView = {
   num_players: number
   dora_indicators: string
 }
+
+/** Mirrors `crate::schema::HoraScoreInfo`. Returned by `compute_bot_hora_score`. */
+export type HoraScoreInfo = {
+  points: number
+  han: number
+  fu: number
+  yakuman: boolean
+  /** mjai tile string of the winning tile. */
+  win_tile: string
+}

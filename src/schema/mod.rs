@@ -8,6 +8,7 @@ pub mod ipc;
 pub mod mjai;
 
 pub use ipc::{
-    BotInfo, BotSettings, BotStatus, LoadStage, NotifyLevel, Notification, ProxyStatus, Snapshot,
+    BotInfo, BotSettings, BotStatus, HoraScoreInfo, LoadStage, NotifyLevel, Notification,
+    ProxyStatus, Snapshot,
 };
 pub use mjai::MjaiEvent;
