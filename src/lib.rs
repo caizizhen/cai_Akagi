@@ -79,7 +79,7 @@ pub fn run() {
     let mjai_bus = event_bus::mjai_bus();
     let bot_response_bus = event_bus::bot_response_bus();
     let bot_status_bus = event_bus::bot_status_bus();
-    let proxy_status_bus = event_bus::proxy_status_bus();
+    let capture_status_bus = event_bus::capture_status_bus();
     let notify_bus = event_bus::notify_bus();
     let analysis_bus = event_bus::analysis_bus();
     let post_tracker_bus = event_bus::post_tracker_bus();
@@ -130,7 +130,7 @@ pub fn run() {
                     mjai_bus.clone(),
                     bot_response_bus.clone(),
                     bot_status_bus.clone(),
-                    proxy_status_bus.clone(),
+                    capture_status_bus.clone(),
                     notify_bus.clone(),
                     analysis_bus.clone(),
                     game_tracker,
@@ -183,7 +183,7 @@ pub fn run() {
                     });
                 }
 
-                // Best-effort terminal ctrl_c → graceful proxy shutdown.
+                // Best-effort terminal ctrl_c → graceful capture shutdown.
                 // GUI close goes through Tauri's window event path, not
                 // here, so this only matters when the user runs Akagi
                 // headless from a terminal.
@@ -191,7 +191,7 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     let _ = tokio::signal::ctrl_c().await;
                     let stop = {
-                        let mut ctl = stop_state.proxy_control.lock().await;
+                        let mut ctl = stop_state.capture_control.lock().await;
                         ctl.stop.take()
                     };
                     if let Some(tx) = stop {

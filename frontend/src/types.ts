@@ -29,11 +29,13 @@ export type BotStatus =
   | { state: 'error'; bot: string; error: string }
   | { state: 'stopped'; bot: string }
 
-export type ProxyStatus =
+export type CaptureKind = 'mitm' | 'chromium'
+
+export type CaptureStatus =
   | { state: 'stopped' }
-  | { state: 'starting'; addr: string }
-  | { state: 'running'; addr: string }
-  | { state: 'error'; addr: string | null; error: string }
+  | { state: 'starting'; kind: CaptureKind; descriptor: string }
+  | { state: 'running'; kind: CaptureKind; descriptor: string }
+  | { state: 'error'; kind: CaptureKind; descriptor?: string; error: string }
 
 export type Notification = {
   level: 'info' | 'success' | 'warn' | 'error'
@@ -116,7 +118,7 @@ export type BotSettings = {
 export type Snapshot = {
   config: AppConfig
   bot_status: BotStatus
-  proxy_status: ProxyStatus
+  capture_status: CaptureStatus
   log_dir: string
 }
 

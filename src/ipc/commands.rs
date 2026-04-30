@@ -312,10 +312,13 @@ pub async fn sync_bot_deps(
     }
 }
 
+/// Start the capture backend selected by `cfg.capture.mode`. No-op
+/// (returns Err) when one is already running — call `restart_capture`
+/// instead if you want to swap.
 #[tauri::command]
-pub async fn start_proxy(state: State<'_, AppState>) -> CmdResult<()> {
+pub async fn start_capture(state: State<'_, AppState>) -> CmdResult<()> {
     let already_running = {
-        let ctl = state.proxy_control.lock().await;
+        let ctl = state.capture_control.lock().await;
         ctl.stop.is_some()
     };
     if already_running {
@@ -326,21 +329,9 @@ pub async fn start_proxy(state: State<'_, AppState>) -> CmdResult<()> {
         .map_err(|e| format!("start capture: {e:#}"))
 }
 
-/// Alias of `start_proxy` for the new capture-mode terminology. Kept as a
-/// distinct command so the frontend can migrate at its own pace.
-#[tauri::command]
-pub async fn start_capture(state: State<'_, AppState>) -> CmdResult<()> {
-    start_proxy(state).await
-}
-
-/// Alias of `stop_proxy` for the new capture-mode terminology.
-#[tauri::command]
-pub async fn stop_capture(state: State<'_, AppState>) -> CmdResult<()> {
-    stop_proxy(state).await
-}
-
 /// Tear down the running backend and start a fresh one. Used by the
-/// Settings "Restart capture" button. Safe to call when nothing is
+/// Settings "Restart capture" button and by `update_config` whenever a
+/// capture-affecting field changed. Safe to call when nothing is
 /// running (becomes a plain start).
 #[tauri::command]
 pub async fn restart_capture(state: State<'_, AppState>) -> CmdResult<()> {
@@ -402,26 +393,30 @@ pub async fn remove_chrome_for_testing(
     Ok(())
 }
 
+/// Stop the running capture backend. Kicks in-flight WebSocket flows
+/// (MITM mode) and signals the supervisor to tear down. Returns Err if
+/// nothing is running.
 #[tauri::command]
-pub async fn stop_proxy(state: State<'_, AppState>) -> CmdResult<()> {
+pub async fn stop_capture(state: State<'_, AppState>) -> CmdResult<()> {
     let (stop, force_close) = {
-        let mut ctl = state.proxy_control.lock().await;
+        let mut ctl = state.capture_control.lock().await;
         (ctl.stop.take(), ctl.force_close.clone())
     };
     // Kick in-flight WS flows first so the game client actually
     // disconnects. Without this, hudsucker's graceful shutdown only
     // blocks new connections; existing ones drain naturally and the
-    // user sees comm "still working" even after stop.
+    // user sees comm "still working" even after stop. (Chromium backend
+    // ignores this — its shutdown closes the browser process directly.)
     force_close.notify_waiters();
     match stop {
         Some(tx) => {
             // Receiver dropped means the task already exited — that's fine,
             // we still cleared `stop` and the status forwarder will catch
-            // up via the next ProxyStatus emission.
+            // up via the next CaptureStatus emission.
             let _ = tx.send(());
             Ok(())
         }
-        None => Err("proxy is not running".into()),
+        None => Err("capture backend is not running".into()),
     }
 }
 
@@ -429,14 +424,23 @@ pub async fn stop_proxy(state: State<'_, AppState>) -> CmdResult<()> {
 pub async fn get_status(state: State<'_, AppState>) -> CmdResult<Snapshot> {
     let config = state.config.read().await.clone();
     let bot_status = state.bot_status.read().await.clone();
-    let proxy_status = state.proxy_control.lock().await.status.clone();
+    let capture_status = state.capture_control.lock().await.status.clone();
     let log_dir = state.log_session.dir().to_path_buf();
     Ok(Snapshot {
         config,
         bot_status,
-        proxy_status,
+        capture_status,
         log_dir,
     })
+}
+
+/// One-shot read of the latest [`crate::schema::CaptureStatus`]. Cheaper
+/// than `get_status` when the caller only needs the capture lifecycle.
+#[tauri::command]
+pub async fn get_capture_status(
+    state: State<'_, AppState>,
+) -> CmdResult<crate::schema::CaptureStatus> {
+    Ok(state.capture_control.lock().await.status.clone())
 }
 
 #[tauri::command]
@@ -564,11 +568,10 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::update_bot_from_manifest,
             $crate::ipc::commands::sync_bot_deps,
             $crate::ipc::commands::delete_bot,
-            $crate::ipc::commands::start_proxy,
-            $crate::ipc::commands::stop_proxy,
             $crate::ipc::commands::start_capture,
             $crate::ipc::commands::stop_capture,
             $crate::ipc::commands::restart_capture,
+            $crate::ipc::commands::get_capture_status,
             $crate::ipc::commands::detect_system_chrome,
             $crate::ipc::commands::list_cft_installed,
             $crate::ipc::commands::download_chrome_for_testing,

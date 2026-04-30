@@ -4,17 +4,17 @@ import type {
   AnalysisResult,
   BotResponse,
   BotStatus,
+  CaptureStatus,
   GameStateSnapshot,
   MahgenView,
   MjaiEvent,
   Notification,
-  ProxyStatus,
   Snapshot,
 } from '@/types'
 import { useGameStore } from '@/stores/gameStore'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { useBotStore } from '@/stores/botStore'
-import { useProxyStore } from '@/stores/proxyStore'
+import { useCaptureStore } from '@/stores/captureStore'
 import { useNotifyStore } from '@/stores/notifyStore'
 import { useConfigStore } from '@/stores/configStore'
 import { toast, type ToastSeverity } from '@/components/ui/sonner'
@@ -58,7 +58,7 @@ export function useTauriBridge() {
         useConfigStore.getState().setConfig(status.config)
         useConfigStore.getState().setLogDir(status.log_dir)
         useBotStore.getState().setStatus(status.bot_status)
-        useProxyStore.getState().set(status.proxy_status)
+        useCaptureStore.getState().set(status.capture_status)
       } catch {
         /* ignore */
       }
@@ -84,8 +84,8 @@ export function useTauriBridge() {
       useBotStore.getState().setStatus(s)
     }).then((u) => unlistens.push(u))
 
-    listen<ProxyStatus>('proxy-status', (s) => {
-      useProxyStore.getState().set(s)
+    listen<CaptureStatus>('capture-status', (s) => {
+      useCaptureStore.getState().set(s)
     }).then((u) => unlistens.push(u))
 
     listen<BotResponse>('bot-response', (r) => {

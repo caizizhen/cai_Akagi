@@ -11,9 +11,10 @@
 //! - [`BotStatusBus`]: lifecycle of the active bot subprocess
 //!   (`Idle/Loading/Ready/Error/Stopped`). Producer: `BotManager`.
 //!   Consumer: `ipc` forwarder (UI loading spinner).
-//! - [`ProxyStatusBus`]: lifecycle of the MITM proxy
-//!   (`Stopped/Starting/Running/Error`). Producer: `ipc::commands` /
-//!   proxy supervisor. Consumer: `ipc` forwarder.
+//! - [`CaptureStatusBus`]: lifecycle of the active capture backend
+//!   (`Stopped/Starting/Running/Error` × `kind: Mitm | Chromium`).
+//!   Producer: `ipc::commands` / capture supervisor. Consumer: `ipc`
+//!   forwarder.
 //! - [`NotifyBus`]: ad-hoc toast notifications. Any subsystem may push;
 //!   `ipc` forwards to the frontend as `notify` events.
 //!
@@ -24,7 +25,7 @@
 
 use crate::analysis::result::AnalysisResult;
 use crate::bot::BotResponse;
-use crate::schema::{BotStatus, MjaiEvent, Notification, ProxyStatus};
+use crate::schema::{BotStatus, CaptureStatus, MjaiEvent, Notification};
 use tokio::sync::broadcast;
 
 /// Fan-out for `MjaiEvent`s from platform bridges.
@@ -36,8 +37,8 @@ pub type BotResponseBus = broadcast::Sender<BotResponse>;
 /// Fan-out for `BotStatus` lifecycle transitions.
 pub type BotStatusBus = broadcast::Sender<BotStatus>;
 
-/// Fan-out for `ProxyStatus` lifecycle transitions.
-pub type ProxyStatusBus = broadcast::Sender<ProxyStatus>;
+/// Fan-out for `CaptureStatus` lifecycle transitions.
+pub type CaptureStatusBus = broadcast::Sender<CaptureStatus>;
 
 /// Fan-out for transient `Notification`s pushed at the user.
 pub type NotifyBus = broadcast::Sender<Notification>;
@@ -78,7 +79,7 @@ pub fn bot_status_bus() -> BotStatusBus {
     tx
 }
 
-pub fn proxy_status_bus() -> ProxyStatusBus {
+pub fn capture_status_bus() -> CaptureStatusBus {
     let (tx, _rx) = broadcast::channel(STATUS_CAPACITY);
     tx
 }

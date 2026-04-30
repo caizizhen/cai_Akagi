@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useBlocker } from 'react-router-dom'
+import { Link, useBlocker } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -100,6 +100,9 @@ export function Settings() {
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Settings</h1>
         <div className="flex gap-2">
+          <Button variant="ghost" asChild>
+            <Link to="/setup?rerun=1">Re-run setup</Link>
+          </Button>
           <Button variant="outline" onClick={() => setDraft(stored)} disabled={!dirty || saving}>
             Reset
           </Button>

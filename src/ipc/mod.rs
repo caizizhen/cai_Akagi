@@ -30,13 +30,12 @@
 //! | `mjai-event`      | `schema::MjaiEvent`           |
 //! | `bot-response`    | `bot::BotResponse`            |
 //! | `bot-status`      | `schema::BotStatus`           |
-//! | `proxy-status`    | `schema::ProxyStatus`         |
+//! | `capture-status`  | `schema::CaptureStatus`       |
 //! | `notify`          | `schema::Notification`        |
 //! | `analysis-result` | `analysis::AnalysisResult`    |
 
 pub mod capture_supervisor;
 pub mod commands;
-pub mod proxy_supervisor;
 pub mod state;
 
 pub use state::AppState;
@@ -66,7 +65,7 @@ fn spawn_forwarders<R: Runtime>(app: AppHandle<R>, state: AppState) {
 
     // Status buses: forward AND snapshot into AppState.
     spawn_bot_status_forwarder(app.clone(), state.clone());
-    spawn_proxy_status_forwarder(app, state);
+    spawn_capture_status_forwarder(app, state);
 }
 
 /// Plain forwarder: subscribe, drain, emit. `Lagged` is logged once and
@@ -114,20 +113,20 @@ fn spawn_bot_status_forwarder<R: Runtime>(app: AppHandle<R>, state: AppState) {
     });
 }
 
-fn spawn_proxy_status_forwarder<R: Runtime>(app: AppHandle<R>, state: AppState) {
-    let mut rx = state.proxy_status_bus.subscribe();
-    let control = state.proxy_control.clone();
+fn spawn_capture_status_forwarder<R: Runtime>(app: AppHandle<R>, state: AppState) {
+    let mut rx = state.capture_status_bus.subscribe();
+    let control = state.capture_control.clone();
     tauri::async_runtime::spawn(async move {
         loop {
             match rx.recv().await {
                 Ok(s) => {
                     control.lock().await.status = s.clone();
-                    if let Err(e) = app.emit("proxy-status", &s) {
-                        warn!("ipc emit proxy-status failed: {e}");
+                    if let Err(e) = app.emit("capture-status", &s) {
+                        warn!("ipc emit capture-status failed: {e}");
                     }
                 }
                 Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warn!("ipc forwarder proxy-status lagged by {n}");
+                    warn!("ipc forwarder capture-status lagged by {n}");
                 }
                 Err(broadcast::error::RecvError::Closed) => return,
             }

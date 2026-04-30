@@ -12,7 +12,7 @@ use tracing::info;
 
 pub struct HudsuckerBackend {
     proxy_cfg: ProxyConfig,
-    /// Shared with `AppState.proxy_control.force_close` — `notify_waiters`
+    /// Shared with `AppState.capture_control.force_close` — `notify_waiters`
     /// kicks every in-flight WS so existing flows actually disconnect (not
     /// just drain naturally) when the supervisor stops the backend.
     pub force_close: Arc<Notify>,

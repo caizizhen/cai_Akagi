@@ -3,7 +3,7 @@ import { Bot, Shield, ScrollText, Gamepad2, Settings as SettingsIcon } from 'luc
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useBotStore } from '@/stores/botStore'
-import { useProxyStore } from '@/stores/proxyStore'
+import { useCaptureStore } from '@/stores/captureStore'
 import { useConfigStore } from '@/stores/configStore'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { fmtTime } from '@/lib/format'
@@ -20,15 +20,18 @@ const DOT: Record<string, string> = {
 
 export function Overview() {
   const bot = useBotStore((s) => s.status)
-  const proxy = useProxyStore((s) => s.status)
+  const capture = useCaptureStore((s) => s.status)
   const logDir = useConfigStore((s) => s.logDir)
   const lastAnalysis = useAnalysisStore((s) => s.updatedAt)
+
+  const captureTitle = 'kind' in capture && capture.kind === 'chromium' ? 'Capture (Chromium)' : 'Capture (MITM)'
+  const captureDetail = 'descriptor' in capture && capture.descriptor ? capture.descriptor : '—'
 
   return (
     <div className="p-6 flex flex-col gap-6 w-full">
       <header>
         <h1 className="text-2xl font-semibold">Overview</h1>
-        <p className="text-sm text-muted-foreground">Live status of bot, proxy, and the active log session.</p>
+        <p className="text-sm text-muted-foreground">Live status of bot, capture, and the active log session.</p>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -41,10 +44,10 @@ export function Overview() {
         />
         <StatusCard
           icon={Shield}
-          title="Proxy"
-          state={proxy.state}
-          detail={'addr' in proxy && proxy.addr ? proxy.addr : '—'}
-          extra={'error' in proxy ? proxy.error : undefined}
+          title={captureTitle}
+          state={capture.state}
+          detail={captureDetail}
+          extra={'error' in capture ? capture.error : undefined}
         />
         <Card>
           <CardHeader className="flex flex-row items-center gap-2">

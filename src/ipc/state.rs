@@ -3,51 +3,53 @@
 //! `AppState` owns the long-lived handles every IPC command and forwarder
 //! needs: a clone of each `event_bus` `Sender`, the live `AppConfig`, the
 //! log session directory, and the runtime handle that lets commands
-//! start / stop the proxy on demand.
+//! start / stop the capture backend on demand.
 //!
 //! Snapshots vs streams: the `*_bus` channels are the canonical event
 //! stream, but a frontend that opens a window mid-game needs a one-shot
 //! "what's the current state?" answer. To serve that, the IPC forwarder
 //! task mirrors every status event into the `bot_status` /
-//! `proxy_control.status` slots, and the `get_status` command reads them
-//! back. Commands that *change* state (set_active_bot, start/stop_proxy)
-//! also write the snapshot synchronously so a follow-up `get_status` is
-//! always consistent with the action that just succeeded.
+//! `capture_control.status` slots, and the `get_status` command reads
+//! them back. Commands that *change* state (set_active_bot,
+//! start/stop_capture) also write the snapshot synchronously so a
+//! follow-up `get_status` is always consistent with the action that just
+//! succeeded.
 
 use crate::analysis::runner::AnalysisCache;
 use crate::bot::PythonRuntime;
 use crate::config::AppConfig;
 use crate::event_bus::{
-    AnalysisBus, BotResponseBus, BotStatusBus, MjaiBus, NotifyBus, ProxyStatusBus,
+    AnalysisBus, BotResponseBus, BotStatusBus, CaptureStatusBus, MjaiBus, NotifyBus,
 };
 use crate::game_state::GameTracker;
 use crate::logger::Session;
-use crate::schema::{BotStatus, ProxyStatus};
+use crate::schema::{BotStatus, CaptureStatus};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify, RwLock, oneshot};
 
-/// Per-running-proxy control handle.
+/// Per-running-capture-backend control handle.
 ///
-/// `stop` is `Some` while the proxy task is alive; sending `()` triggers
-/// `with_graceful_shutdown` and the task exits. After exit the
+/// `stop` is `Some` while the backend task is alive; sending `()`
+/// triggers graceful shutdown and the task exits. After exit the
 /// supervisor sets `stop = None` and updates `status`.
 ///
-/// `force_close` is shared with the active `ProxyHandler`; calling
-/// `notify_waiters()` kicks every in-flight WebSocket flow so the game
-/// client actually disconnects (graceful shutdown alone only blocks new
-/// connections — existing flows would otherwise drain naturally).
-pub struct ProxyControl {
-    pub status: ProxyStatus,
+/// `force_close` is shared with the hudsucker handler when MITM is the
+/// active backend; calling `notify_waiters()` kicks every in-flight
+/// WebSocket flow so the game client actually disconnects (graceful
+/// shutdown alone only blocks new connections — existing flows would
+/// otherwise drain naturally). The Chromium backend ignores it.
+pub struct CaptureControl {
+    pub status: CaptureStatus,
     pub stop: Option<oneshot::Sender<()>>,
     pub force_close: Arc<Notify>,
 }
 
-impl Default for ProxyControl {
+impl Default for CaptureControl {
     fn default() -> Self {
         Self {
-            status: ProxyStatus::Stopped,
+            status: CaptureStatus::Stopped,
             stop: None,
             force_close: Arc::new(Notify::new()),
         }
@@ -63,13 +65,13 @@ pub struct AppState {
     pub mjai_bus: MjaiBus,
     pub bot_response_bus: BotResponseBus,
     pub bot_status_bus: BotStatusBus,
-    pub proxy_status_bus: ProxyStatusBus,
+    pub capture_status_bus: CaptureStatusBus,
     pub notify_bus: NotifyBus,
     pub analysis_bus: AnalysisBus,
 
     /// Latest BotStatus seen on the bus. Forwarder writes; commands read.
     pub bot_status: Arc<RwLock<BotStatus>>,
-    pub proxy_control: Arc<Mutex<ProxyControl>>,
+    pub capture_control: Arc<Mutex<CaptureControl>>,
     /// Live game-state mirror. Future IPC commands lock this and call
     /// `snapshot()` to expose hands/scores/dora to the frontend.
     pub game_tracker: Arc<Mutex<GameTracker>>,
@@ -96,7 +98,7 @@ impl AppState {
         mjai_bus: MjaiBus,
         bot_response_bus: BotResponseBus,
         bot_status_bus: BotStatusBus,
-        proxy_status_bus: ProxyStatusBus,
+        capture_status_bus: CaptureStatusBus,
         notify_bus: NotifyBus,
         analysis_bus: AnalysisBus,
         game_tracker: Arc<Mutex<GameTracker>>,
@@ -110,11 +112,11 @@ impl AppState {
             mjai_bus,
             bot_response_bus,
             bot_status_bus,
-            proxy_status_bus,
+            capture_status_bus,
             notify_bus,
             analysis_bus,
             bot_status: Arc::new(RwLock::new(BotStatus::Idle)),
-            proxy_control: Arc::new(Mutex::new(ProxyControl::default())),
+            capture_control: Arc::new(Mutex::new(CaptureControl::default())),
             game_tracker,
             analysis_cache,
             runtime,

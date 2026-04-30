@@ -122,15 +122,40 @@ pub enum BotStatus {
     Stopped { bot: String },
 }
 
-// ---------- ProxyStatus ----------
+// ---------- CaptureStatus ----------
 
+/// Discriminant of the active capture transport. Mirrors
+/// [`crate::capture::CaptureKind`] for IPC payloads — re-exported here so
+/// `schema::*` is a self-contained surface for frontend type generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureKind {
+    Mitm,
+    Chromium,
+}
+
+/// Lifecycle of the active capture backend.
+///
+/// `descriptor` carries a human-readable label (proxy listen addr for
+/// MITM, executable path for Chromium) — surface in UI, do not parse.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
-pub enum ProxyStatus {
+pub enum CaptureStatus {
     Stopped,
-    Starting { addr: String },
-    Running { addr: String },
-    Error { addr: Option<String>, error: String },
+    Starting {
+        kind: CaptureKind,
+        descriptor: String,
+    },
+    Running {
+        kind: CaptureKind,
+        descriptor: String,
+    },
+    Error {
+        kind: CaptureKind,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        descriptor: Option<String>,
+        error: String,
+    },
 }
 
 // ---------- HoraScoreInfo ----------
@@ -195,7 +220,7 @@ pub struct BotSettings {
 pub struct Snapshot {
     pub config: AppConfig,
     pub bot_status: BotStatus,
-    pub proxy_status: ProxyStatus,
+    pub capture_status: CaptureStatus,
     pub log_dir: PathBuf,
 }
 
@@ -265,23 +290,49 @@ mod tests {
     }
 
     #[test]
-    fn proxy_status_round_trips() {
-        let s = ProxyStatus::Running {
-            addr: "127.0.0.1:23410".into(),
+    fn capture_status_running_round_trips() {
+        let s = CaptureStatus::Running {
+            kind: CaptureKind::Mitm,
+            descriptor: "127.0.0.1:23410".into(),
         };
         let j = serde_json::to_string(&s).unwrap();
-        let back: ProxyStatus = serde_json::from_str(&j).unwrap();
+        let back: CaptureStatus = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, s);
+        assert!(j.contains(r#""state":"running""#));
+        assert!(j.contains(r#""kind":"mitm""#));
+        assert!(j.contains(r#""descriptor":"127.0.0.1:23410""#));
+    }
+
+    #[test]
+    fn capture_status_chromium_running() {
+        let s = CaptureStatus::Running {
+            kind: CaptureKind::Chromium,
+            descriptor: "/usr/bin/google-chrome".into(),
+        };
+        let j = serde_json::to_string(&s).unwrap();
+        assert!(j.contains(r#""kind":"chromium""#));
+        let back: CaptureStatus = serde_json::from_str(&j).unwrap();
         assert_eq!(back, s);
     }
 
     #[test]
-    fn proxy_status_error_with_no_addr() {
-        let s = ProxyStatus::Error {
-            addr: None,
-            error: "bind failed".into(),
+    fn capture_status_error_omits_null_descriptor() {
+        let s = CaptureStatus::Error {
+            kind: CaptureKind::Chromium,
+            descriptor: None,
+            error: "spawn failed".into(),
         };
         let j = serde_json::to_string(&s).unwrap();
         assert!(j.contains(r#""state":"error""#));
-        assert!(j.contains(r#""addr":null"#));
+        assert!(j.contains(r#""kind":"chromium""#));
+        // skip_serializing_if = Option::is_none → no descriptor key
+        assert!(!j.contains("descriptor"), "got: {j}");
+    }
+
+    #[test]
+    fn capture_status_stopped_minimal() {
+        let s = CaptureStatus::Stopped;
+        let j = serde_json::to_string(&s).unwrap();
+        assert_eq!(j, r#"{"state":"stopped"}"#);
     }
 }

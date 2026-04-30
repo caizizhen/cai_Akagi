@@ -41,7 +41,7 @@ pub struct ProxyHandler {
     /// Optional fan-out for parsed mjai events. `None` keeps the proxy
     /// usable in tests and in standalone "log only" mode.
     mjai_tx: Option<MjaiBus>,
-    /// Triggered by `stop_proxy` to kick all in-flight WS flows. Without
+    /// Triggered by `stop_capture` to kick all in-flight WS flows. Without
     /// this, hudsucker's `with_graceful_shutdown` only blocks new
     /// connections; existing ones would drain naturally and the game
     /// client would never see a disconnect.
