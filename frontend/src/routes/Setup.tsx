@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select'
 import { invoke } from '@/lib/tauri'
 import { useConfigStore } from '@/stores/configStore'
-import type { AppConfig, CaptureMode, DetectedBrowser } from '@/types'
+import type { AppConfig, DetectedBrowser } from '@/types'
 
 type Step = 'welcome' | 'mode' | 'config' | 'finish'
 
