@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/dialog'
 import { invoke } from '@/lib/tauri'
 import { useConfigStore } from '@/stores/configStore'
-import type { AppConfig } from '@/types'
+import type { AppConfig, CaptureMode, DetectedBrowser } from '@/types'
 
 export function Settings() {
   const stored = useConfigStore((s) => s.config)
@@ -139,31 +139,7 @@ export function Settings() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Proxy</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          <Toggle
-            label="Enabled"
-            value={draft.proxy.enabled}
-            onChange={(v) => setDraft({ ...draft, proxy: { ...draft.proxy, enabled: v } })}
-          />
-          <Field label="Address">
-            <Input
-              value={draft.proxy.addr}
-              onChange={(e) => setDraft({ ...draft, proxy: { ...draft.proxy, addr: e.target.value } })}
-              placeholder="127.0.0.1:11656"
-            />
-          </Field>
-          <Field label="CA directory" hint="Where root certificate / keys are written.">
-            <Input
-              value={draft.proxy.ca_dir}
-              onChange={(e) => setDraft({ ...draft, proxy: { ...draft.proxy, ca_dir: e.target.value } })}
-            />
-          </Field>
-        </CardContent>
-      </Card>
+      <CaptureCard draft={draft} setDraft={setDraft} />
 
       <Card>
         <CardHeader>
@@ -277,5 +253,144 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
       <Label>{label}</Label>
       <Switch checked={value} onCheckedChange={onChange} />
     </div>
+  )
+}
+
+function CaptureCard({
+  draft,
+  setDraft,
+}: {
+  draft: AppConfig
+  setDraft: (c: AppConfig) => void
+}) {
+  const mode: CaptureMode = draft.capture?.mode ?? 'mitm'
+  const chromium = draft.capture?.chromium ?? {
+    executable: '',
+    user_data_dir: '',
+    start_url: 'https://game.maj-soul.com/1/',
+    cft_channel: 'stable',
+    force_cft: false,
+    extra_args: [],
+  }
+  const [detected, setDetected] = useState<DetectedBrowser[] | null>(null)
+  const [detecting, setDetecting] = useState(false)
+
+  const probe = async () => {
+    setDetecting(true)
+    try {
+      const list = await invoke<DetectedBrowser[]>('detect_system_chrome')
+      setDetected(list)
+    } catch {
+      setDetected([])
+    } finally {
+      setDetecting(false)
+    }
+  }
+
+  useEffect(() => {
+    if (mode === 'chromium' && detected === null) {
+      probe()
+    }
+  }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setMode = (v: CaptureMode) =>
+    setDraft({
+      ...draft,
+      capture: {
+        mode: v,
+        chromium,
+      },
+    })
+  const setChromium = (patch: Partial<typeof chromium>) =>
+    setDraft({
+      ...draft,
+      capture: {
+        mode,
+        chromium: { ...chromium, ...patch },
+      },
+    })
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Capture</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <Field label="Mode" hint="MITM proxy needs CA cert + system proxy. Chromium launches a controlled browser — no setup.">
+          <Select value={mode} onValueChange={(v) => setMode(v as CaptureMode)}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="mitm">MITM proxy</SelectItem>
+              <SelectItem value="chromium">Chromium browser (experimental)</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+
+        {mode === 'mitm' && (
+          <>
+            <Toggle
+              label="Proxy enabled"
+              value={draft.proxy.enabled}
+              onChange={(v) => setDraft({ ...draft, proxy: { ...draft.proxy, enabled: v } })}
+            />
+            <Field label="Address">
+              <Input
+                value={draft.proxy.addr}
+                onChange={(e) => setDraft({ ...draft, proxy: { ...draft.proxy, addr: e.target.value } })}
+                placeholder="127.0.0.1:23410"
+              />
+            </Field>
+            <Field label="CA directory" hint="Where root certificate / keys are written.">
+              <Input
+                value={draft.proxy.ca_dir}
+                onChange={(e) => setDraft({ ...draft, proxy: { ...draft.proxy, ca_dir: e.target.value } })}
+              />
+            </Field>
+          </>
+        )}
+
+        {mode === 'chromium' && (
+          <>
+            <Field label="Browser executable" hint="Leave blank to auto-detect.">
+              <Input
+                value={chromium.executable}
+                onChange={(e) => setChromium({ executable: e.target.value })}
+                placeholder="/usr/bin/google-chrome"
+              />
+            </Field>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">
+                {detecting
+                  ? 'Detecting…'
+                  : detected === null
+                    ? 'Click Detect to scan for installed browsers.'
+                    : detected.length === 0
+                      ? 'No Chromium-family browser detected.'
+                      : `Detected: ${detected.map((d) => d.path).join(', ')}`}
+              </span>
+              <Button variant="outline" size="sm" onClick={probe} disabled={detecting}>
+                {detecting ? 'Detecting…' : 'Detect'}
+              </Button>
+            </div>
+            <Field label="User data dir" hint="Leave blank to use the default Akagi profile under your config dir.">
+              <Input
+                value={chromium.user_data_dir}
+                onChange={(e) => setChromium({ user_data_dir: e.target.value })}
+                placeholder="(default)"
+              />
+            </Field>
+            <Field label="Start URL">
+              <Input
+                value={chromium.start_url}
+                onChange={(e) => setChromium({ start_url: e.target.value })}
+                placeholder="https://game.maj-soul.com/1/"
+              />
+            </Field>
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }

@@ -43,12 +43,34 @@ export type Notification = {
   id?: string
 }
 
+export type CaptureMode = 'mitm' | 'chromium'
+
+export type ChromiumConfig = {
+  executable: string
+  user_data_dir: string
+  start_url: string
+  cft_channel: string
+  force_cft: boolean
+  extra_args: string[]
+}
+
+export type CaptureConfig = {
+  mode: CaptureMode
+  chromium: ChromiumConfig
+}
+
+export type DetectedBrowser = {
+  kind: 'chrome' | 'edge' | 'brave' | 'chromium' | 'chrome_for_testing'
+  path: string
+}
+
 export type AppConfig = {
-  general: { language: string }
+  general: { language: string; first_run_completed: boolean }
   logging: { dir: string; level: string; all_level: string }
   platform: { kind: 'Majsoul' }
   proxy: { enabled: boolean; addr: string; ca_dir: string }
   bot: { enabled: boolean; active_4p: string; active_3p: string; auto_sync: boolean; dir: string }
+  capture: CaptureConfig
 }
 
 export type FieldKind = 'string' | 'bool' | 'int' | 'float' | 'enum'

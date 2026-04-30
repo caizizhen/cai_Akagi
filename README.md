@@ -98,9 +98,16 @@ cargo test                          # all tests, incl. integration
 
 On first launch:
 1. A default `config.toml` is written next to the binary (or in CWD).
-2. The proxy generates a self-signed root CA at `./ca/akagi-ca.{cer,crt,pem,der}`.
-   Trust the cert in your OS / browser store before pointing Majsoul at the proxy.
-3. The first bot spawn runs `uv sync` (slow). Subsequent spawns are fast —
+2. With `[capture] mode = "mitm"` (default), the proxy generates a
+   self-signed root CA at `./ca/akagi-ca.{cer,crt,pem,der}`. Trust it in
+   your OS / browser store before pointing Majsoul at the proxy.
+3. With `[capture] mode = "chromium"`, Akagi launches a controlled
+   Chromium-family browser (auto-detected: Chrome / Edge / Brave /
+   Chromium) with its own profile under `<user_config_root>/chrome-profile`
+   and intercepts WebSocket frames via the Chrome DevTools Protocol — no
+   proxy / CA setup needed. Settings → Capture has the toggle and a
+   Detect button to pick the browser executable.
+4. The first bot spawn runs `uv sync` (slow). Subsequent spawns are fast —
    the sync is gated by an mtime+size stamp at `mjai_bot/<name>/.akagi/synced.stamp`.
 
 Default proxy bind: `127.0.0.1:23410`. Health probe: `GET /ping → pong`.
@@ -128,6 +135,17 @@ enabled = true
 addr    = "127.0.0.1:23410"
 ca_dir  = "./ca"
 
+[capture]
+mode = "mitm"               # or "chromium"
+
+[capture.chromium]
+executable    = ""                              # blank = auto-detect
+user_data_dir = ""                              # blank = <user_config_root>/chrome-profile
+start_url     = "https://game.maj-soul.com/1/"
+cft_channel   = "stable"                        # Chrome-for-Testing fallback (Phase 2)
+force_cft     = false
+extra_args    = []
+
 [bot]
 enabled   = true
 active_4p = "mortal"        # bot used in 4-player (yonma) games
@@ -136,11 +154,12 @@ auto_sync = true
 dir       = "./mjai_bot"
 ```
 
-Edit live via the `update_config` Tauri command. Note: changing
-`proxy.addr` requires `stop_proxy` + `start_proxy`; `bot.active_4p` /
-`bot.active_3p` swap on the next `start_game` (per-mode based on the
-table's `num_players`). Pre-3p config files with a single `active = "..."`
-key are auto-migrated into `active_4p` on load.
+Edit live via the `update_config` Tauri command. Capture-affecting
+fields (`capture.mode`, `capture.chromium.*`, `proxy.*`) automatically
+restart the active backend on save — no app relaunch needed.
+`bot.active_4p` / `bot.active_3p` swap on the next `start_game`
+(per-mode based on the table's `num_players`). Pre-3p config files with
+a single `active = "..."` key are auto-migrated into `active_4p` on load.
 
 ---
 

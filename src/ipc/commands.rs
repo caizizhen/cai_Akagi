@@ -14,7 +14,7 @@ use crate::bot::{BotEntry, BotRegistry};
 use crate::config::AppConfig;
 use crate::game_state::mahgen_view::MahgenView;
 use crate::game_state::snapshot::GameStateSnapshot;
-use crate::ipc::proxy_supervisor::spawn_proxy_supervisor;
+use crate::ipc::capture_supervisor::{restart_capture as restart_capture_inner, spawn_capture_supervisor};
 use crate::ipc::state::AppState;
 use crate::schema::{BotInfo, BotSettings, HoraScoreInfo, Notification, Snapshot};
 use crate::util::resolve_dir;
@@ -39,19 +39,47 @@ pub async fn get_config(state: State<'_, AppState>) -> CmdResult<AppConfig> {
 }
 
 /// Replace the entire config and persist it to the same file the app
-/// loaded from. Subsystems that are already running (proxy, bot manager)
-/// keep their old settings until restarted — frontend should warn.
+/// loaded from. Capture-related changes (mode, chromium settings, proxy
+/// settings) trigger an automatic supervisor restart so the user doesn't
+/// have to relaunch the app to switch capture modes. Bot-manager and
+/// other subsystems still require manual restart.
 #[tauri::command]
 pub async fn update_config(
     new_config: AppConfig,
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
     persist_config(&new_config, &state.config_path).map_err(|e| e.to_string())?;
+
+    // Snapshot the *previous* capture-relevant fields before we overwrite,
+    // so we can decide whether the supervisor needs a swap.
+    let (prev_capture, prev_proxy) = {
+        let cfg = state.config.read().await;
+        (cfg.capture.clone(), cfg.proxy.clone())
+    };
+    let capture_changed = prev_capture != new_config.capture;
+    let proxy_changed = prev_proxy != new_config.proxy;
     *state.config.write().await = new_config;
-    let _ = state.notify_bus.send(
-        Notification::success("Config saved")
-            .body("Restart affected subsystems for changes to take effect."),
-    );
+
+    if capture_changed || proxy_changed {
+        // Run the restart in the background — `update_config` returns
+        // promptly so the UI doesn't hang on slow shutdowns.
+        let st = (*state).clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = restart_capture_inner(st).await {
+                let _ = ();
+                tracing::error!("auto-restart capture failed: {e:#}");
+            }
+        });
+        let _ = state.notify_bus.send(
+            Notification::info("Capture restarted")
+                .body("Applied capture/proxy config changes."),
+        );
+    } else {
+        let _ = state.notify_bus.send(
+            Notification::success("Config saved")
+                .body("Restart affected subsystems for changes to take effect."),
+        );
+    }
     Ok(())
 }
 
@@ -291,11 +319,41 @@ pub async fn start_proxy(state: State<'_, AppState>) -> CmdResult<()> {
         ctl.stop.is_some()
     };
     if already_running {
-        return Err("proxy already running".into());
+        return Err("capture backend already running".into());
     }
-    spawn_proxy_supervisor((*state).clone())
+    spawn_capture_supervisor((*state).clone())
         .await
-        .map_err(|e| format!("start proxy: {e:#}"))
+        .map_err(|e| format!("start capture: {e:#}"))
+}
+
+/// Alias of `start_proxy` for the new capture-mode terminology. Kept as a
+/// distinct command so the frontend can migrate at its own pace.
+#[tauri::command]
+pub async fn start_capture(state: State<'_, AppState>) -> CmdResult<()> {
+    start_proxy(state).await
+}
+
+/// Alias of `stop_proxy` for the new capture-mode terminology.
+#[tauri::command]
+pub async fn stop_capture(state: State<'_, AppState>) -> CmdResult<()> {
+    stop_proxy(state).await
+}
+
+/// Tear down the running backend and start a fresh one. Used by the
+/// Settings "Restart capture" button. Safe to call when nothing is
+/// running (becomes a plain start).
+#[tauri::command]
+pub async fn restart_capture(state: State<'_, AppState>) -> CmdResult<()> {
+    restart_capture_inner((*state).clone())
+        .await
+        .map_err(|e| format!("restart capture: {e:#}"))
+}
+
+/// Probe the system for installed Chromium-family browsers. Surface in the
+/// Settings UI so the user can pick which executable to launch.
+#[tauri::command]
+pub async fn detect_system_chrome() -> CmdResult<Vec<crate::capture::chromium::detect::DetectedBrowser>> {
+    Ok(crate::capture::chromium::detect::detect_system_browsers())
 }
 
 #[tauri::command]
@@ -462,6 +520,10 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::delete_bot,
             $crate::ipc::commands::start_proxy,
             $crate::ipc::commands::stop_proxy,
+            $crate::ipc::commands::start_capture,
+            $crate::ipc::commands::stop_capture,
+            $crate::ipc::commands::restart_capture,
+            $crate::ipc::commands::detect_system_chrome,
             $crate::ipc::commands::get_status,
             $crate::ipc::commands::get_log_dir,
             $crate::ipc::commands::get_analysis,

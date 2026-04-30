@@ -17,6 +17,15 @@ pub fn strip_leading_dot(p: &Path) -> &Path {
     p.strip_prefix("./").unwrap_or(p)
 }
 
+/// `<user_config_root>/<name>` if available. Use this for runtime data
+/// that must always live in a writable XDG-style location regardless of
+/// AppImage / system-install / cwd. Unlike [`resolve_dir`], there is no
+/// exe-dir-first fallback — callers like the Chromium profile and CfT
+/// install dir explicitly want the user dir every time.
+pub fn user_subdir(name: &str) -> Option<PathBuf> {
+    user_config_root().map(|r| r.join(name))
+}
+
 /// Resolve a configured directory path with the standard fallback chain:
 ///
 /// 1. Absolute path → used as-is

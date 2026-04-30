@@ -1,10 +1,12 @@
 mod bot;
+mod capture;
 mod general;
 mod logging;
 mod platform;
 mod proxy;
 
 pub use bot::BotConfig;
+pub use capture::{CaptureConfig, CaptureMode, ChromiumConfig};
 pub use general::GeneralConfig;
 pub use logging::LoggingConfig;
 pub use platform::{Platform, PlatformConfig};
@@ -21,6 +23,7 @@ pub struct AppConfig {
     pub platform: PlatformConfig,
     pub proxy: ProxyConfig,
     pub bot: BotConfig,
+    pub capture: CaptureConfig,
 }
 
 enum ResolvedPath {
@@ -166,7 +169,37 @@ pub fn load_config(cli_path: Option<&Path>) -> (AppConfig, PathBuf) {
     };
     // Migrate legacy `[bot] active = "..."` into `active_4p` once.
     cfg.bot.migrate_legacy_active();
+    // Pre-existing configs (created before the first-run wizard landed)
+    // shouldn't be hijacked into the wizard. Detect by presence of any
+    // non-default field that the user must have written deliberately.
+    migrate_first_run_marker(&mut cfg, &path);
     (cfg, path)
+}
+
+/// Existing users upgrading to a build that introduces the wizard get
+/// `first_run_completed = true` automatically — they've already run the
+/// app at least once and don't need onboarding. Detected by the config
+/// file existing on disk *and* not being a freshly-written defaults file.
+///
+/// A defaults file written by `write_default_config` contains the full
+/// serialised AppConfig; we treat any config file that lacks the new
+/// `general.first_run_completed` key as legacy (serde fills the default
+/// `false` on parse, so we flip it to `true` after parsing).
+fn migrate_first_run_marker(cfg: &mut AppConfig, path: &Path) {
+    if cfg.general.first_run_completed {
+        return;
+    }
+    let Ok(body) = std::fs::read_to_string(path) else {
+        return;
+    };
+    // If the file lacks the explicit key, it's a legacy file: respect the
+    // user's prior config (whatever is on disk works for them already)
+    // and skip the wizard. Fresh defaults files written by us *do* contain
+    // the explicit `first_run_completed = false` line, so they still trigger
+    // the wizard.
+    if !body.contains("first_run_completed") {
+        cfg.general.first_run_completed = true;
+    }
 }
 
 #[cfg(test)]

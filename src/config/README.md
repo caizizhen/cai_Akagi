@@ -61,11 +61,12 @@ bar = "default_value"
 
 ## Existing sections
 
-- `general` (`general.rs`) — language.
+- `general` (`general.rs`) — language; `first_run_completed` flag controls whether the setup wizard is shown on app start.
 - `logging` (`logging.rs`) — log root dir, console default level (overridden by `RUST_LOG`), `all_level` severity filter for `all.log` (`EnvFilter` syntax).
-- `platform` (`platform.rs`) — game platform whose traffic to bridge. `kind` selects which `Bridge` impl runs in the proxy handler. Currently only `Majsoul`.
-- `proxy` (`proxy.rs`) — MITM proxy enable flag, listen addr, CA cert dir.
+- `platform` (`platform.rs`) — game platform whose traffic to bridge. `kind` selects which `Bridge` impl runs in the capture pipeline. Currently only `Majsoul`.
+- `proxy` (`proxy.rs`) — MITM proxy enable flag, listen addr, CA cert dir. Authoritative when `capture.mode = "mitm"`.
 - `bot` (`bot.rs`) — AI bot enable flag, active bot subdir name, `mjai_bot/` root, and whether to run `uv sync` automatically before spawning.
+- `capture` (`capture.rs`) — selects the capture transport: `mitm` (uses `[proxy]`) or `chromium` (uses `[capture.chromium]`). Chromium mode launches a controlled browser and intercepts WebSocket frames via CDP — no proxy/CA setup needed.
 
 ## Notes
 

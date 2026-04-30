@@ -36,6 +36,7 @@ globset = "0.4"
 tempfile = "3"
 futures-util = "0.3"
 dirs = "6"
+chromiumoxide = "0.9.1"
 
 [dev-dependencies]
 tempfile = "3"

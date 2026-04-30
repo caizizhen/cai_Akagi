@@ -34,6 +34,7 @@
 //! | `notify`          | `schema::Notification`        |
 //! | `analysis-result` | `analysis::AnalysisResult`    |
 
+pub mod capture_supervisor;
 pub mod commands;
 pub mod proxy_supervisor;
 pub mod state;

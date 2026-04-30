@@ -40,3 +40,6 @@ mjai_bot/mortal*
 mortal.zip
 *.bot.zip
 tests/mortal_zip_layout.rs
+
+# Test
+test

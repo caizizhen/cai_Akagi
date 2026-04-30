@@ -1,6 +1,7 @@
 pub mod analysis;
 pub mod bot;
 pub mod bridge;
+pub mod capture;
 pub mod cli;
 pub mod config;
 pub mod event_bus;
@@ -171,12 +172,13 @@ pub fn run() {
                 }
 
                 if proxy_enabled {
-                    let state_for_proxy = state.clone();
+                    let state_for_capture = state.clone();
                     tauri::async_runtime::spawn(async move {
                         if let Err(e) =
-                            ipc::proxy_supervisor::spawn_proxy_supervisor(state_for_proxy).await
+                            ipc::capture_supervisor::spawn_capture_supervisor(state_for_capture)
+                                .await
                         {
-                            error!("Proxy supervisor failed: {e:#}");
+                            error!("Capture supervisor failed: {e:#}");
                         }
                     });
                 }
