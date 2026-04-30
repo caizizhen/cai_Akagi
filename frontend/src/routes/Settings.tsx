@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { invoke } from '@/lib/tauri'
+import { useCaptureStore } from '@/stores/captureStore'
 import { useConfigStore } from '@/stores/configStore'
 import type { AppConfig, CaptureMode, DetectedBrowser } from '@/types'
 
@@ -316,7 +317,10 @@ function CaptureCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Capture</CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle>Capture</CardTitle>
+          <CaptureStatusBar />
+        </div>
       </CardHeader>
       <CardContent className="grid gap-4">
         <Field label="Mode" hint="MITM proxy needs CA cert + system proxy. Chromium launches a controlled browser — no setup.">
@@ -401,6 +405,54 @@ function CaptureCard({
         )}
       </CardContent>
     </Card>
+  )
+}
+
+const CAPTURE_DOT: Record<string, string> = {
+  running: 'bg-emerald-500',
+  starting: 'bg-amber-500',
+  stopped: 'bg-zinc-500',
+  error: 'bg-red-500',
+}
+
+function CaptureStatusBar() {
+  const status = useCaptureStore((s) => s.status)
+  const [busy, setBusy] = useState(false)
+
+  const dot = CAPTURE_DOT[status.state] ?? 'bg-zinc-500'
+  const detail =
+    'descriptor' in status && status.descriptor
+      ? status.descriptor
+      : status.state === 'stopped'
+        ? '—'
+        : ''
+
+  const restart = async () => {
+    setBusy(true)
+    try {
+      await invoke('restart_capture')
+    } catch {
+      /* surfaced via notify */
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1.5 text-xs">
+        <span className={`h-2 w-2 rounded-full ${dot}`} />
+        <span className="capitalize font-medium">{status.state}</span>
+        {detail && (
+          <span className="font-mono text-muted-foreground truncate max-w-[200px]" title={detail}>
+            {detail}
+          </span>
+        )}
+      </div>
+      <Button variant="outline" size="sm" onClick={restart} disabled={busy}>
+        {busy ? 'Restarting…' : 'Restart capture'}
+      </Button>
+    </div>
   )
 }
 

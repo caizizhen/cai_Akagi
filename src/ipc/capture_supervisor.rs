@@ -17,7 +17,7 @@ use crate::capture::{
 };
 use crate::config::CaptureMode;
 use crate::ipc::state::AppState;
-use crate::schema::{CaptureKind, CaptureStatus};
+use crate::schema::{CaptureKind, CaptureStatus, Notification};
 use anyhow::Result;
 use std::time::Duration;
 use tokio::sync::broadcast;
@@ -140,6 +140,7 @@ pub async fn spawn_capture_supervisor(state: AppState) -> Result<()> {
     };
     let status_bus = state.capture_status_bus.clone();
     let control = state.capture_control.clone();
+    let notify_bus = state.notify_bus.clone();
 
     // Splice shutdown_notify into a oneshot-shaped trigger for
     // `capture_control.stop`. The existing API (commands::stop_capture)
@@ -168,11 +169,24 @@ pub async fn spawn_capture_supervisor(state: AppState) -> Result<()> {
                 CaptureStatus::Stopped
             }
             Err(e) => {
-                error!("capture supervisor: {e:#}");
+                let msg = format!("{e:#}");
+                error!("capture supervisor: {msg}");
+                // Surface via toast so the user sees it without watching
+                // the dashboard. Sticky id `capture-error` lets the next
+                // restart's Running emission overwrite the same toast.
+                let _ = notify_bus.send(
+                    Notification::error(format!(
+                        "{} capture stopped",
+                        kind_label(kind)
+                    ))
+                    .body(format!("{msg} — open Settings → Capture and click Restart."))
+                    .sticky()
+                    .id("capture-error"),
+                );
                 CaptureStatus::Error {
                     kind,
                     descriptor: Some(label.clone()),
-                    error: format!("{e:#}"),
+                    error: msg,
                 }
             }
         };
@@ -185,4 +199,11 @@ pub async fn spawn_capture_supervisor(state: AppState) -> Result<()> {
     });
 
     Ok(())
+}
+
+fn kind_label(k: CaptureKind) -> &'static str {
+    match k {
+        CaptureKind::Mitm => "MITM",
+        CaptureKind::Chromium => "Chromium",
+    }
 }

@@ -51,6 +51,15 @@ pub fn spawn(exe: &Path, profile: &Path, cfg: &ChromiumConfig) -> Result<Child> 
     if port_file.exists() {
         let _ = std::fs::remove_file(&port_file);
     }
+    // Wipe session-restore state so each launch opens exactly the
+    // configured `start_url`, never the tabs the user happened to have
+    // open last time. Cookies / login state under `Default/` are NOT
+    // touched — the user stays logged in to Mahjong Soul.
+    clear_session_state(profile);
+    // Suppress "Restore tabs from crashed session?" bubble when our
+    // previous run was force-killed (SIGKILL fallback marks the profile
+    // as crashed; without this the user sees the bubble on every relaunch).
+    suppress_crash_recovery_prompt(profile);
     cmd.kill_on_drop(true);
     let child = cmd.spawn().with_context(|| {
         format!("failed to spawn chromium binary at {}", exe.display())
@@ -95,6 +104,75 @@ pub fn parse_devtools_port(body: &str) -> Option<String> {
     Some(format!("ws://127.0.0.1:{port}{path_line}"))
 }
 
+/// Wipe the session-restore files Chromium uses to repopulate tabs on
+/// the next launch. Best-effort: missing files are fine, errors logged
+/// at debug level. Targets the `Default/` profile only (which is what
+/// our isolated `--user-data-dir` always uses).
+fn clear_session_state(profile: &Path) {
+    let default_dir = profile.join("Default");
+    // Files
+    for name in [
+        "Current Session",
+        "Current Tabs",
+        "Last Session",
+        "Last Tabs",
+    ] {
+        let p = default_dir.join(name);
+        if p.exists() {
+            if let Err(e) = std::fs::remove_file(&p) {
+                debug!("clear session: remove_file {}: {e}", p.display());
+            }
+        }
+    }
+    // Directories (newer Chromium stores per-window session protos here).
+    for name in ["Sessions", "Tabs"] {
+        let p = default_dir.join(name);
+        if p.exists() {
+            if let Err(e) = std::fs::remove_dir_all(&p) {
+                debug!("clear session: remove_dir_all {}: {e}", p.display());
+            }
+        }
+    }
+}
+
+/// If the previous run was force-killed (`exit_type == "Crashed"`),
+/// Chromium shows a "Restore tabs from previous session?" bubble. We
+/// already wiped the session files; flip `exit_type` back to `"Normal"`
+/// so the bubble doesn't show up either. Best-effort JSON patch.
+fn suppress_crash_recovery_prompt(profile: &Path) {
+    let prefs_path = profile.join("Default").join("Preferences");
+    let Ok(body) = std::fs::read_to_string(&prefs_path) else {
+        return; // first launch — no Preferences yet, nothing to do
+    };
+    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&body) else {
+        debug!("Preferences JSON parse failed — leaving as-is");
+        return;
+    };
+    let Some(profile_obj) = json
+        .get_mut("profile")
+        .and_then(|v| v.as_object_mut())
+    else {
+        return;
+    };
+    let needs_write = profile_obj.get("exit_type").and_then(|v| v.as_str())
+        != Some("Normal")
+        || profile_obj.get("exited_cleanly").and_then(|v| v.as_bool())
+            != Some(true);
+    if !needs_write {
+        return;
+    }
+    profile_obj.insert(
+        "exit_type".into(),
+        serde_json::Value::String("Normal".into()),
+    );
+    profile_obj.insert("exited_cleanly".into(), serde_json::Value::Bool(true));
+    if let Ok(out) = serde_json::to_string(&json) {
+        if let Err(e) = std::fs::write(&prefs_path, out) {
+            debug!("write Preferences: {e}");
+        }
+    }
+}
+
 /// Best-effort staged shutdown: try a polite term, escalate to kill if
 /// the child doesn't exit. Always returns; never panics.
 pub async fn terminate(child: &mut Child) {
@@ -130,6 +208,64 @@ pub async fn terminate(child: &mut Child) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clear_session_state_removes_known_files_and_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let default_dir = dir.path().join("Default");
+        std::fs::create_dir_all(&default_dir).unwrap();
+        for name in ["Current Session", "Current Tabs", "Last Session", "Last Tabs"] {
+            std::fs::write(default_dir.join(name), b"stale").unwrap();
+        }
+        std::fs::create_dir_all(default_dir.join("Sessions")).unwrap();
+        std::fs::write(default_dir.join("Sessions/Session_1"), b"x").unwrap();
+        std::fs::create_dir_all(default_dir.join("Tabs")).unwrap();
+
+        clear_session_state(dir.path());
+
+        for name in ["Current Session", "Current Tabs", "Last Session", "Last Tabs"] {
+            assert!(!default_dir.join(name).exists(), "still exists: {name}");
+        }
+        assert!(!default_dir.join("Sessions").exists());
+        assert!(!default_dir.join("Tabs").exists());
+    }
+
+    #[test]
+    fn clear_session_state_no_default_dir_is_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        // No Default/ — should not panic, should not create anything.
+        clear_session_state(dir.path());
+        assert!(!dir.path().join("Default").exists());
+    }
+
+    #[test]
+    fn suppress_crash_recovery_prompt_flips_exit_type() {
+        let dir = tempfile::tempdir().unwrap();
+        let default_dir = dir.path().join("Default");
+        std::fs::create_dir_all(&default_dir).unwrap();
+        let prefs = default_dir.join("Preferences");
+        std::fs::write(
+            &prefs,
+            r#"{"profile":{"exit_type":"Crashed","exited_cleanly":false,"name":"keep me"}}"#,
+        )
+        .unwrap();
+
+        suppress_crash_recovery_prompt(dir.path());
+
+        let body = std::fs::read_to_string(&prefs).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let profile = json.get("profile").unwrap().as_object().unwrap();
+        assert_eq!(profile.get("exit_type").unwrap(), "Normal");
+        assert_eq!(profile.get("exited_cleanly").unwrap(), true);
+        // Unrelated keys preserved.
+        assert_eq!(profile.get("name").unwrap(), "keep me");
+    }
+
+    #[test]
+    fn suppress_crash_recovery_prompt_no_prefs_is_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        suppress_crash_recovery_prompt(dir.path()); // must not panic
+    }
 
     #[test]
     fn parses_devtools_port_well_formed() {
