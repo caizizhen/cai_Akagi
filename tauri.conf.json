@@ -39,6 +39,11 @@
     ],
     "resources": [
       "runtime/**/*"
-    ]
+    ],
+    "linux": {
+      "rpm": {
+        "compression": { "type": "gzip", "level": 1 }
+      }
+    }
   }
 }
