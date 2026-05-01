@@ -6,6 +6,7 @@ pub mod cli;
 pub mod config;
 pub mod event_bus;
 pub mod game_state;
+pub mod history;
 pub mod ipc;
 pub mod logger;
 pub mod platform;
@@ -14,6 +15,7 @@ pub mod schema;
 pub mod util;
 
 use clap::Parser;
+use std::path::Path;
 use std::sync::Arc;
 use tauri::Manager;
 use tracing::{error, info, warn};
@@ -83,6 +85,24 @@ pub fn run() {
     let notify_bus = event_bus::notify_bus();
     let analysis_bus = event_bus::analysis_bus();
     let post_tracker_bus = event_bus::post_tracker_bus();
+    let history_bus = event_bus::history_bus();
+
+    // Persistent game-history store. Lives under `<config_root>/history/`
+    // by default — independent of the volatile session log dir. Failure
+    // to create the dir is fatal: the recorder task and IPC commands
+    // both depend on it.
+    let history_root = util::resolve_dir(Path::new("./history"));
+    let history_store = match history::HistoryStore::new(history_root.clone()) {
+        Ok(s) => Arc::new(s),
+        Err(e) => {
+            error!(
+                "Failed to initialise history store at {}: {e:#}",
+                history_root.display()
+            );
+            return;
+        }
+    };
+    info!("History store at {}", history_root.display());
 
     let bot_enabled = cfg.bot.enabled;
     let proxy_enabled = cfg.proxy.enabled;
@@ -100,6 +120,10 @@ pub fn run() {
     let analysis_tracker = game_tracker.clone();
     let analysis_bus_for_runner = analysis_bus.clone();
     let analysis_cache_for_runner = analysis_cache.clone();
+
+    let history_rx = mjai_bus.subscribe();
+    let history_store_for_recorder = history_store.clone();
+    let history_bus_for_recorder = history_bus.clone();
 
     tauri::Builder::default()
         .invoke_handler(crate::ipc_handlers!())
@@ -133,8 +157,10 @@ pub fn run() {
                     capture_status_bus.clone(),
                     notify_bus.clone(),
                     analysis_bus.clone(),
+                    history_bus.clone(),
                     game_tracker,
                     analysis_cache,
+                    history_store.clone(),
                     runtime.clone(),
                 );
 
@@ -154,6 +180,17 @@ pub fn run() {
                     analysis_cache_for_runner,
                 ));
 
+                // History recorder. Subscribes to the shared MjaiBus and
+                // finalises one GameRecord per `EndGame`. v3 only has a
+                // Majsoul bridge so the platform tag is hardcoded; once
+                // additional bridges land, fan out per-bridge.
+                tauri::async_runtime::spawn(history::recorder::drive_loop(
+                    history_store_for_recorder,
+                    history_bus_for_recorder,
+                    schema::Platform::Majsoul,
+                    history_rx,
+                ));
+
                 if bot_enabled {
                     let mjai_for_bot = mjai_bus.clone();
                     let resp = bot_response_bus.clone();
@@ -161,9 +198,12 @@ pub fn run() {
                     let nb = notify_bus.clone();
                     let rt = runtime.clone();
                     let syncs = state.syncs_in_flight.clone();
+                    state
+                        .bot_manager_started
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
                     tauri::async_runtime::spawn(async move {
                         if let Err(e) =
-                            spawn_bot_manager(bot_cfg, mjai_for_bot, resp, bs, nb, rt, syncs)
+                            bot::run_bot_manager(bot_cfg, mjai_for_bot, resp, bs, nb, rt, syncs)
                                 .await
                         {
                             error!("Bot manager failed: {e:#}");
@@ -206,43 +246,3 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-async fn spawn_bot_manager(
-    cfg: config::BotConfig,
-    mjai: event_bus::MjaiBus,
-    response_bus: event_bus::BotResponseBus,
-    status_bus: event_bus::BotStatusBus,
-    notify_bus: event_bus::NotifyBus,
-    runtime: Option<bot::PythonRuntime>,
-    syncs_in_flight: Arc<tokio::sync::Mutex<std::collections::HashSet<String>>>,
-) -> anyhow::Result<()> {
-    let bot_dir = util::resolve_dir(std::path::Path::new(&cfg.dir));
-    let registry = bot::BotRegistry::scan(&bot_dir)?;
-    for (label, name) in [("4p", &cfg.active_4p), ("3p", &cfg.active_3p)] {
-        if !name.is_empty() && registry.find(name).is_none() {
-            warn!(
-                "configured {} bot {:?} not found under {}; available: {:?}",
-                label,
-                name,
-                bot_dir.display(),
-                registry.names().collect::<Vec<_>>()
-            );
-        }
-    }
-
-    let runtime = runtime.ok_or_else(|| {
-        anyhow::anyhow!("bot mode is enabled but no python3+uv runtime was found on PATH")
-    })?;
-
-    let manager = bot::BotManager::new(
-        runtime,
-        registry,
-        cfg.active_4p,
-        cfg.active_3p,
-        response_bus,
-        status_bus,
-        notify_bus,
-        syncs_in_flight,
-    );
-    let rx = mjai.subscribe();
-    manager.run(rx).await
-}

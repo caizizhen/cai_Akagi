@@ -23,7 +23,7 @@ which = "8.0.2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "chrono"] }
 tracing-appender = "0.2"
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 hudsucker = { version = "0.24", features = ["rcgen-ca", "rustls-client"], default-features = false }
 serde_with = "3.18.0"
 prost = "0.14"
@@ -37,6 +37,7 @@ tempfile = "3"
 futures-util = "0.3"
 dirs = "6"
 chromiumoxide = "0.9.1"
+ulid = { version = "1", features = ["serde"] }
 
 [dev-dependencies]
 tempfile = "3"

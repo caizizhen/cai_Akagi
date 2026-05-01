@@ -14,6 +14,7 @@ pub mod manifest;
 pub mod registry;
 pub mod runner;
 pub mod runtime;
+pub mod supervisor;
 pub mod sync_guard;
 pub mod types;
 
@@ -23,5 +24,6 @@ pub use manifest::{BotSource, FieldKind, FieldSpec, Manifest, ManifestBot};
 pub use registry::{BotEntry, BotRegistry};
 pub use runner::{BotRunner, SubprocessBot};
 pub use runtime::{PythonRuntime, RuntimeMode};
+pub use supervisor::run_bot_manager;
 pub use sync_guard::SyncGuard;
 pub use types::BotResponse;

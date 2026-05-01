@@ -19,13 +19,15 @@ use crate::analysis::runner::AnalysisCache;
 use crate::bot::PythonRuntime;
 use crate::config::AppConfig;
 use crate::event_bus::{
-    AnalysisBus, BotResponseBus, BotStatusBus, CaptureStatusBus, MjaiBus, NotifyBus,
+    AnalysisBus, BotResponseBus, BotStatusBus, CaptureStatusBus, HistoryBus, MjaiBus, NotifyBus,
 };
 use crate::game_state::GameTracker;
+use crate::history::HistoryStore;
 use crate::logger::Session;
 use crate::schema::{BotStatus, CaptureStatus};
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::{oneshot, Mutex, Notify, RwLock};
 
@@ -68,6 +70,7 @@ pub struct AppState {
     pub capture_status_bus: CaptureStatusBus,
     pub notify_bus: NotifyBus,
     pub analysis_bus: AnalysisBus,
+    pub history_bus: HistoryBus,
 
     /// Latest BotStatus seen on the bus. Forwarder writes; commands read.
     pub bot_status: Arc<RwLock<BotStatus>>,
@@ -78,6 +81,9 @@ pub struct AppState {
     /// Latest analysis result, populated by the analysis runner. Read by
     /// the `get_analysis` Tauri command for one-shot queries.
     pub analysis_cache: AnalysisCache,
+    /// Persistent game-history store. Written by the recorder task,
+    /// read by `list_game_history` / `get_game_history_*` IPC commands.
+    pub history_store: Arc<HistoryStore>,
 
     /// Bundled-or-system Python + uv. `None` on dev boxes lacking both —
     /// install/sync commands surface a friendly error instead of panicking;
@@ -87,6 +93,12 @@ pub struct AppState {
     /// `sync_bot_deps` command and `BotManager::spawn_runner` acquire-or-bail
     /// so two parallel syncs against the same venv can't trample each other.
     pub syncs_in_flight: Arc<Mutex<HashSet<String>>>,
+    /// Set to `true` once a `BotManager` has been spawned for this process.
+    /// Used by `update_config` to start the manager on a runtime
+    /// false→true flip of `bot.enabled` (e.g. when the first-run wizard
+    /// finishes) without ever spawning twice. There is no off-switch:
+    /// once started, the manager runs for the lifetime of the process.
+    pub bot_manager_started: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -101,8 +113,10 @@ impl AppState {
         capture_status_bus: CaptureStatusBus,
         notify_bus: NotifyBus,
         analysis_bus: AnalysisBus,
+        history_bus: HistoryBus,
         game_tracker: Arc<Mutex<GameTracker>>,
         analysis_cache: AnalysisCache,
+        history_store: Arc<HistoryStore>,
         runtime: Option<PythonRuntime>,
     ) -> Self {
         Self {
@@ -115,12 +129,15 @@ impl AppState {
             capture_status_bus,
             notify_bus,
             analysis_bus,
+            history_bus,
             bot_status: Arc::new(RwLock::new(BotStatus::Idle)),
             capture_control: Arc::new(Mutex::new(CaptureControl::default())),
             game_tracker,
             analysis_cache,
+            history_store,
             runtime,
             syncs_in_flight: Arc::new(Mutex::new(HashSet::new())),
+            bot_manager_started: Arc::new(AtomicBool::new(false)),
         }
     }
 }

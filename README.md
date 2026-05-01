@@ -197,12 +197,58 @@ working reference.
 
 ---
 
+## Game History
+
+Every cleanly-ended match (i.e. one that produced an `end_game` mjai event)
+is persisted under `<config_root>/history/`:
+
+```
+<config_root>/history/
+├── index.jsonl              # one JSON-encoded GameRecord per line
+└── games/
+    └── <ulid>.mjai.jsonl    # full event stream copy
+```
+
+Mid-game disconnects leave an unfinalised buffer that is silently dropped — only
+complete games make it to disk. The history store is independent of the
+session log dir (`<log_dir>/majsoul/*.mjai.jsonl`), which keeps its bridge-debug
+behaviour untouched.
+
+The frontend's **History** tab (sidebar) shows:
+
+- **Rank pie chart** — 1st / 2nd / 3rd / 4th distribution (3 slices for sanma).
+- **Cumulative PT line chart** — running total under the chosen rule:
+  - **Majsoul**: pick `場次` (銅 / 銀 / 金 / 玉 / 王座) and `段位` (初心 1 星 → 魂天).
+    PT = `(終局点 − 25_000) / 1000 + 馬點 + 段位分`. 3p uses 35_000 starting
+    score and the sanma uma/dan tables.
+  - **Tenhou**: pick `段位` (新人 → 天鳳位 across 21 ranks). PT comes
+    straight from a `[段位][東/南][rank]` cell.
+  - **Custom**: edit the uma + dan-bonus arrays for 4p and 3p directly.
+  Switching rule / dan re-renders the chart immediately — no backend
+  round-trip.
+- **Detailed stats** — win rate, deal-in rate, riichi rate, fuuro rate,
+  ryukyoku rate, average winning / deal-in points, average winning turn,
+  yakuman / nagashi-mangan counts; mirrors `libriichi/src/stat.rs`.
+- **Game list** — filterable by platform / players / east-or-south / date.
+  Click a row to see the final standings and per-game stats; the trash
+  icon deletes both the index entry and the per-game `.mjai.jsonl` copy.
+
+PT-rule and filter selections are persisted to `localStorage`; the records
+themselves come from the backend on bridge boot and stay current via the
+`history-recorded` Tauri event.
+
+See `src/history/README.md` for the module-extension guide (adding a new
+platform / stat field / filter dimension).
+
+---
+
 ## TODO
 
 - [ ] Complete frontend
 - [x] 3-player mahjong (sanma) — full pipeline: bridge / tracker / snapshot / analysis / FE / per-mode bot routing. See `reference/reference_mjai_3p.md` for the wire format.
 - [ ] Other platforms (Tenhou / RiichiCity)
 - [x] Download mjai bot from GitHub repo link (per-bot release URL → auto-fetch into `mjai_bot/<name>/`)
+- [x] Game history persistence + frontend tab (rank pie / cumulative PT / stats / game list)
 
 ---
 

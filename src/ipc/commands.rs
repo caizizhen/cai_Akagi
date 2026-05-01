@@ -18,11 +18,26 @@ use crate::ipc::capture_supervisor::{
     restart_capture as restart_capture_inner, spawn_capture_supervisor,
 };
 use crate::ipc::state::AppState;
-use crate::schema::{BotInfo, BotSettings, HoraScoreInfo, Notification, Snapshot};
+use crate::schema::{
+    BotInfo, BotSettings, GameRecord, HistoryEvent, HistoryEventLog, HistoryFilter, HoraScoreInfo,
+    Notification, Snapshot,
+};
 use crate::util::resolve_dir;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tauri::State;
+
+/// Returns `true` exactly once per process the first time `bot_enabled`
+/// is observed as `true` here. Side-effect on success: flips `flag`
+/// false→true via a CAS. Used by `update_config` to decide whether the
+/// caller should spawn a fresh `BotManager`.
+fn claim_bot_manager_spawn(bot_enabled: bool, flag: &std::sync::atomic::AtomicBool) -> bool {
+    use std::sync::atomic::Ordering;
+    bot_enabled
+        && flag
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+}
 
 fn entry_to_info(e: &BotEntry) -> BotInfo {
     BotInfo {
@@ -43,8 +58,12 @@ pub async fn get_config(state: State<'_, AppState>) -> CmdResult<AppConfig> {
 /// Replace the entire config and persist it to the same file the app
 /// loaded from. Capture-related changes (mode, chromium settings, proxy
 /// settings) trigger an automatic supervisor restart so the user doesn't
-/// have to relaunch the app to switch capture modes. Bot-manager and
-/// other subsystems still require manual restart.
+/// have to relaunch the app to switch capture modes. A `bot.enabled`
+/// false→true flip (typically the first-run wizard finishing) hot-starts
+/// the `BotManager` so the user doesn't have to relaunch either; once
+/// started the manager runs for the lifetime of the process (toggling
+/// `bot.enabled` back to false still requires a relaunch to actually
+/// stop it).
 #[tauri::command]
 pub async fn update_config(new_config: AppConfig, state: State<'_, AppState>) -> CmdResult<()> {
     persist_config(&new_config, &state.config_path).map_err(|e| e.to_string())?;
@@ -57,6 +76,8 @@ pub async fn update_config(new_config: AppConfig, state: State<'_, AppState>) ->
     };
     let capture_changed = prev_capture != new_config.capture;
     let proxy_changed = prev_proxy != new_config.proxy;
+    let bot_cfg = new_config.bot.clone();
+    let bot_now_enabled = new_config.bot.enabled;
     *state.config.write().await = new_config;
 
     if capture_changed || proxy_changed {
@@ -77,6 +98,31 @@ pub async fn update_config(new_config: AppConfig, state: State<'_, AppState>) ->
             Notification::success("Config saved")
                 .body("Restart affected subsystems for changes to take effect."),
         );
+    }
+
+    // Hot-start the bot manager when bot.enabled flips false→true.
+    // `bot_manager_started` is process-wide, so repeat false→true→false→true
+    // toggles only spawn once. The manager runs forever; flipping back to
+    // false still requires an Akagi relaunch to actually stop it.
+    if claim_bot_manager_spawn(bot_now_enabled, &state.bot_manager_started) {
+        let mjai = state.mjai_bus.clone();
+        let resp = state.bot_response_bus.clone();
+        let bs = state.bot_status_bus.clone();
+        let nb = state.notify_bus.clone();
+        let rt = state.runtime.clone();
+        let syncs = state.syncs_in_flight.clone();
+        let started_flag = state.bot_manager_started.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) =
+                crate::bot::run_bot_manager(bot_cfg, mjai, resp, bs, nb, rt, syncs).await
+            {
+                tracing::error!("Bot manager failed: {e:#}");
+                // Setup failure: clear the flag so a follow-up
+                // update_config (e.g. the user fixing the bot dir and
+                // saving again) gets another shot at spawning.
+                started_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
     }
     Ok(())
 }
@@ -535,6 +581,78 @@ pub async fn delete_bot(name: String, state: State<'_, AppState>) -> CmdResult<(
     Ok(())
 }
 
+// ---------- Game history ----------
+//
+// Reads/writes are delegated to `state.history_store`. All errors bubble
+// up as user-readable strings (the store error chain via anyhow has the
+// detail we need; `:#` prints the full chain).
+
+/// Filtered, paginated listing of finalised games. Newest-first by
+/// `started_at`. `limit == 0` means use the store's default cap.
+#[tauri::command]
+pub async fn list_game_history(
+    filter: Option<HistoryFilter>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<GameRecord>> {
+    let store = state.history_store.clone();
+    let filter = filter.unwrap_or_default();
+    let limit = limit.unwrap_or(0);
+    let offset = offset.unwrap_or(0);
+    tokio::task::spawn_blocking(move || store.list(&filter, limit, offset))
+        .await
+        .map_err(|e| format!("history list join error: {e}"))?
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// Single record by id.
+#[tauri::command]
+pub async fn get_game_history_record(
+    id: String,
+    state: State<'_, AppState>,
+) -> CmdResult<Option<GameRecord>> {
+    let store = state.history_store.clone();
+    tokio::task::spawn_blocking(move || store.get(&id))
+        .await
+        .map_err(|e| format!("history get join error: {e}"))?
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// Full mjai event stream for a recorded game. `None` if the id is unknown.
+#[tauri::command]
+pub async fn get_game_history_events(
+    id: String,
+    state: State<'_, AppState>,
+) -> CmdResult<Option<HistoryEventLog>> {
+    let store = state.history_store.clone();
+    tokio::task::spawn_blocking(move || store.get_events(&id))
+        .await
+        .map_err(|e| format!("history get_events join error: {e}"))?
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// Delete a recorded game (its index entry + games/<id>.mjai.jsonl).
+/// Returns true if a record was actually removed. Emits a
+/// `HistoryEvent::Deleted` on the history bus so the frontend can drop
+/// the row from its cache without a refetch.
+#[tauri::command]
+pub async fn delete_game_history_entry(
+    id: String,
+    state: State<'_, AppState>,
+) -> CmdResult<bool> {
+    let store = state.history_store.clone();
+    let id_for_blocking = id.clone();
+    let removed = tokio::task::spawn_blocking(move || store.delete(&id_for_blocking))
+        .await
+        .map_err(|e| format!("history delete join error: {e}"))?
+        .map_err(|e| format!("{e:#}"))?;
+    if removed {
+        let _ = state.history_bus.send(HistoryEvent::Deleted { id });
+    }
+    Ok(removed)
+}
+
 fn persist_config(config: &AppConfig, path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
@@ -575,6 +693,10 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::get_game_snapshot,
             $crate::ipc::commands::get_mahgen_view,
             $crate::ipc::commands::compute_bot_hora_score,
+            $crate::ipc::commands::list_game_history,
+            $crate::ipc::commands::get_game_history_record,
+            $crate::ipc::commands::get_game_history_events,
+            $crate::ipc::commands::delete_game_history_entry,
         ]
     };
 }
@@ -600,5 +722,52 @@ mod tests {
         assert_eq!(back.bot.active_4p, "mortal");
         assert_eq!(back.bot.active_3p, "mortal_3p");
         assert_eq!(back.proxy.addr, "127.0.0.1:9999");
+    }
+
+    /// Regression: the first-run wizard ships a fresh-install Akagi with
+    /// `bot.enabled = false` (defaults), then calls `update_config` to
+    /// flip it to `true`. Before the fix the bot manager was never
+    /// spawned in this process — the user had to relaunch the app.
+    /// `claim_bot_manager_spawn` is the gate that makes
+    /// `update_config` spawn the manager exactly once on that flip.
+    #[test]
+    fn claim_bot_manager_spawn_fires_once_on_false_to_true_flip() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let flag = AtomicBool::new(false);
+
+        // bot.enabled still false (e.g. user saved an unrelated setting
+        // before completing the wizard) — must not claim.
+        assert!(!claim_bot_manager_spawn(false, &flag));
+        assert!(!flag.load(Ordering::SeqCst));
+
+        // Wizard finishes with bot.enabled = true — claim succeeds.
+        assert!(claim_bot_manager_spawn(true, &flag));
+        assert!(flag.load(Ordering::SeqCst));
+
+        // Subsequent saves with bot.enabled still true — manager is
+        // already running, must not double-spawn.
+        assert!(!claim_bot_manager_spawn(true, &flag));
+        assert!(flag.load(Ordering::SeqCst));
+
+        // Toggling bot.enabled back to false then forward to true: the
+        // running manager survives (no off-switch yet), so we still must
+        // not claim a second time.
+        assert!(!claim_bot_manager_spawn(false, &flag));
+        assert!(!claim_bot_manager_spawn(true, &flag));
+        assert!(flag.load(Ordering::SeqCst));
+    }
+
+    /// Regression: when startup spawns the manager (because `bot.enabled`
+    /// was already true on first config load), the flag is set true
+    /// up front. A subsequent `update_config` must observe that and skip
+    /// spawning a duplicate manager.
+    #[test]
+    fn claim_bot_manager_spawn_respects_preset_flag() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let flag = AtomicBool::new(true);
+        assert!(!claim_bot_manager_spawn(true, &flag));
+        assert!(flag.load(Ordering::SeqCst));
     }
 }

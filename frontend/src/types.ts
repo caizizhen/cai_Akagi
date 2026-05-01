@@ -238,3 +238,99 @@ export type HoraScoreInfo = {
   /** mjai tile string of the winning tile. */
   win_tile: string
 }
+
+// ---------- Game History ----------
+//
+// Mirrors `crate::schema::history::*`. Strings carry RFC3339 timestamps;
+// the frontend parses them with `new Date(...)` on demand.
+
+export type Platform =
+  | 'majsoul'
+  | 'tenhou'
+  | 'riichi_city'
+  | 'mjai'
+  | 'unknown'
+
+export type KyokuMode = 'east_only' | 'east_south' | 'other'
+
+/** Per-game stat counters from the recorded player's perspective. */
+export type GameStats = {
+  round: number
+  oya: number
+
+  fuuro: number
+  fuuro_num: number
+  fuuro_point: number
+  fuuro_agari: number
+  fuuro_agari_jun: number
+  fuuro_agari_point: number
+  fuuro_houjuu: number
+
+  agari: number
+  agari_as_oya: number
+  agari_jun: number
+  agari_point_oya: number
+  agari_point_ko: number
+
+  houjuu: number
+  houjuu_jun: number
+  houjuu_to_oya: number
+  houjuu_point_to_oya: number
+  houjuu_point_to_ko: number
+
+  riichi: number
+  riichi_as_oya: number
+  riichi_jun: number
+  riichi_agari: number
+  riichi_agari_point: number
+  riichi_agari_jun: number
+  riichi_houjuu: number
+  riichi_ryukyoku: number
+  riichi_point: number
+  chasing_riichi: number
+  riichi_got_chased: number
+
+  dama_agari: number
+  dama_agari_jun: number
+  dama_agari_point: number
+
+  ryukyoku: number
+  ryukyoku_point: number
+
+  yakuman: number
+  nagashi_mangan: number
+}
+
+export type GameRecord = {
+  id: string
+  /** RFC3339 timestamp. */
+  started_at: string
+  /** RFC3339 timestamp. */
+  ended_at: string
+  platform: Platform
+  num_players: 3 | 4
+  kyoku_mode: KyokuMode
+  names: string[]
+  our_seat: number | null
+  final_scores: number[]
+  final_ranks: number[]
+  our_rank: number | null
+  /** `final_score - starting_score` (4p:25000, 3p:35000). */
+  our_delta: number | null
+  stats: GameStats
+  log_path: string
+}
+
+export type HistoryFilter = {
+  platform?: Platform
+  num_players?: 3 | 4
+  kyoku_mode?: KyokuMode
+  /** RFC3339 timestamp; inclusive. */
+  started_after?: string
+  /** RFC3339 timestamp; exclusive. */
+  started_before?: string
+}
+
+export type HistoryEvent =
+  | { kind: 'recorded'; record: GameRecord }
+  | { kind: 'deleted'; id: string }

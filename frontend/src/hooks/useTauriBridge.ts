@@ -5,7 +5,9 @@ import type {
   BotResponse,
   BotStatus,
   CaptureStatus,
+  GameRecord,
   GameStateSnapshot,
+  HistoryEvent,
   MahgenView,
   MjaiEvent,
   Notification,
@@ -17,6 +19,7 @@ import { useBotStore } from '@/stores/botStore'
 import { useCaptureStore } from '@/stores/captureStore'
 import { useNotifyStore } from '@/stores/notifyStore'
 import { useConfigStore } from '@/stores/configStore'
+import { useHistoryStore } from '@/stores/historyStore'
 import { toast, type ToastSeverity } from '@/components/ui/sonner'
 
 // Backend `Notification.level` ∈ {info,success,warn,error}; toast helper
@@ -69,6 +72,24 @@ export function useTauriBridge() {
       } catch {
         /* ignore */
       }
+      // Game history: load all records once at startup. The History
+      // tab is the only consumer; loading lazily there forces a
+      // round-trip on first nav, so do it eagerly while the bridge
+      // is warm. Explicit large `limit` defends against any backend
+      // version that still applies a default cap on `limit=0`.
+      try {
+        useHistoryStore.getState().setLoading(true)
+        const records = await invoke<GameRecord[]>('list_game_history', {
+          filter: null,
+          limit: 1_000_000,
+          offset: 0,
+        })
+        if (!cancelled) useHistoryStore.getState().setRecords(records)
+      } catch {
+        /* ignore: store stays empty */
+      } finally {
+        useHistoryStore.getState().setLoading(false)
+      }
     })()
 
     listen<MjaiEvent>('mjai-event', (e) => {
@@ -90,6 +111,14 @@ export function useTauriBridge() {
 
     listen<BotResponse>('bot-response', (r) => {
       useNotifyStore.getState().pushResponse(r)
+    }).then((u) => unlistens.push(u))
+
+    listen<HistoryEvent>('history-recorded', (ev) => {
+      if (ev.kind === 'recorded') {
+        useHistoryStore.getState().prepend(ev.record)
+      } else if (ev.kind === 'deleted') {
+        useHistoryStore.getState().remove(ev.id)
+      }
     }).then((u) => unlistens.push(u))
 
     listen<Notification>('notify', (n) => {

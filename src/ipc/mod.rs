@@ -27,12 +27,13 @@
 //!
 //! | Event             | Payload type                  |
 //! |-------------------|-------------------------------|
-//! | `mjai-event`      | `schema::MjaiEvent`           |
-//! | `bot-response`    | `bot::BotResponse`            |
-//! | `bot-status`      | `schema::BotStatus`           |
-//! | `capture-status`  | `schema::CaptureStatus`       |
-//! | `notify`          | `schema::Notification`        |
-//! | `analysis-result` | `analysis::AnalysisResult`    |
+//! | `mjai-event`       | `schema::MjaiEvent`           |
+//! | `bot-response`     | `bot::BotResponse`            |
+//! | `bot-status`       | `schema::BotStatus`           |
+//! | `capture-status`   | `schema::CaptureStatus`       |
+//! | `notify`           | `schema::Notification`        |
+//! | `analysis-result`  | `analysis::AnalysisResult`    |
+//! | `history-recorded` | `schema::HistoryEvent`        |
 
 pub mod capture_supervisor;
 pub mod commands;
@@ -65,6 +66,11 @@ fn spawn_forwarders<R: Runtime>(app: AppHandle<R>, state: AppState) {
         app.clone(),
         state.analysis_bus.subscribe(),
         "analysis-result",
+    );
+    forward(
+        app.clone(),
+        state.history_bus.subscribe(),
+        "history-recorded",
     );
 
     // Status buses: forward AND snapshot into AppState.
