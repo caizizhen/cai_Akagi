@@ -71,14 +71,8 @@ pub fn for_opponent(active: &PlayerInfo34, op: &OpponentInfo) -> OpponentRiskVec
         .map(|m| {
             // Dora-tile counts inside the meld — chi/pon/kan share their primary
             // tiles; we look up the meld's anchoring tile's dora membership.
-            let anchor_idx = m
-                .tiles
-                .first()
-                .map(|t| t.idx())
-                .unwrap_or(0);
-            dora.iter()
-                .filter(|d| d.idx() == anchor_idx)
-                .count() as u32
+            let anchor_idx = m.tiles.first().map(|t| t.idx()).unwrap_or(0);
+            dora.iter().filter(|d| d.idx() == anchor_idx).count() as u32
         })
         .sum();
     let point = if op.is_riichi {

@@ -16,7 +16,7 @@
 //! `pyproject.toml` nor `uv.lock` have changed since the last successful
 //! sync.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use tokio::process::Command;
@@ -59,9 +59,7 @@ impl PythonRuntime {
                 return Ok(rt);
             }
         }
-        try_system().context(
-            "no bundled runtime found and neither `python3` nor `uv` is on PATH",
-        )
+        try_system().context("no bundled runtime found and neither `python3` nor `uv` is on PATH")
     }
 
     pub fn python(&self) -> &Path {
@@ -96,9 +94,9 @@ impl PythonRuntime {
         }
 
         if let Some(parent) = stamp_path.parent() {
-            tokio::fs::create_dir_all(parent).await.with_context(|| {
-                format!("create {}", parent.display())
-            })?;
+            tokio::fs::create_dir_all(parent)
+                .await
+                .with_context(|| format!("create {}", parent.display()))?;
         }
 
         let status = Command::new(&self.uv)
@@ -147,7 +145,11 @@ fn try_bundled(resource_dir: &Path) -> Option<PythonRuntime> {
         .join("runtime")
         .join("python")
         .join(triple)
-        .join(if cfg!(windows) { "python.exe" } else { "bin/python3" });
+        .join(if cfg!(windows) {
+            "python.exe"
+        } else {
+            "bin/python3"
+        });
     let uv = resource_dir
         .join("runtime")
         .join("uv")
@@ -181,7 +183,10 @@ fn host_triple() -> &'static str {
     // `cargo` doesn't expose the runtime target triple, only the build-time
     // one — which is exactly what we want here, since the bundled binary
     // matches what we compiled for.
-    env!("TARGET_TRIPLE", "TARGET_TRIPLE not set; build.rs should pass it")
+    env!(
+        "TARGET_TRIPLE",
+        "TARGET_TRIPLE not set; build.rs should pass it"
+    )
 }
 
 /// `mtime:size` for `pyproject.toml` plus the same for `uv.lock` if it

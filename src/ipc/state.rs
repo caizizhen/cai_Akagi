@@ -27,7 +27,7 @@ use crate::schema::{BotStatus, CaptureStatus};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{Mutex, Notify, RwLock, oneshot};
+use tokio::sync::{oneshot, Mutex, Notify, RwLock};
 
 /// Per-running-capture-backend control handle.
 ///

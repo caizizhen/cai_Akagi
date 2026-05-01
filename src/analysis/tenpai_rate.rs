@@ -84,12 +84,7 @@ mod tests {
 
     #[test]
     fn four_open_melds_means_definitely_tenpai() {
-        let r = estimate(
-            &[pon("E"), pon("S"), pon("W"), pon("N")],
-            5,
-            &[],
-            0,
-        );
+        let r = estimate(&[pon("E"), pon("S"), pon("W"), pon("N")], 5, &[], 0);
         assert_eq!(r, 100.0);
     }
 }

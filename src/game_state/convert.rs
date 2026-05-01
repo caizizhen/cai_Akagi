@@ -39,8 +39,7 @@ pub fn to_riichienv(ev: &AkagiEvent) -> Result<Option<RiEvent>> {
         }
     }
 
-    let ri: RiEvent =
-        serde_json::from_value(v).context("deserialize as riichienv mjai event")?;
+    let ri: RiEvent = serde_json::from_value(v).context("deserialize as riichienv mjai event")?;
     Ok(Some(ri))
 }
 
@@ -147,7 +146,12 @@ mod tests {
             kyotaku: 0,
             oya: 0,
             scores: vec![25000, 25000, 25000, 25000],
-            tehais: vec![one_hand.clone(), one_hand.clone(), one_hand.clone(), one_hand],
+            tehais: vec![
+                one_hand.clone(),
+                one_hand.clone(),
+                one_hand.clone(),
+                one_hand,
+            ],
             num_players: 4,
         };
         let out = to_riichienv(&ev).unwrap().unwrap();

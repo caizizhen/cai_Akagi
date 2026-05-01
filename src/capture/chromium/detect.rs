@@ -123,13 +123,22 @@ fn detect_into(found: &mut Vec<DetectedBrowser>) {
     use BrowserKind::*;
     // Try registry App Paths first.
     if let Some(p) = reg_query_app_paths("chrome.exe") {
-        found.push(DetectedBrowser { kind: Chrome, path: p });
+        found.push(DetectedBrowser {
+            kind: Chrome,
+            path: p,
+        });
     }
     if let Some(p) = reg_query_app_paths("msedge.exe") {
-        found.push(DetectedBrowser { kind: Edge, path: p });
+        found.push(DetectedBrowser {
+            kind: Edge,
+            path: p,
+        });
     }
     if let Some(p) = reg_query_app_paths("brave.exe") {
-        found.push(DetectedBrowser { kind: Brave, path: p });
+        found.push(DetectedBrowser {
+            kind: Brave,
+            path: p,
+        });
     }
 
     // Fixed paths.
@@ -140,7 +149,10 @@ fn detect_into(found: &mut Vec<DetectedBrowser>) {
     for (relative, kind) in [
         ("Google\\Chrome\\Application\\chrome.exe", Chrome),
         ("Microsoft\\Edge\\Application\\msedge.exe", Edge),
-        ("BraveSoftware\\Brave-Browser\\Application\\brave.exe", Brave),
+        (
+            "BraveSoftware\\Brave-Browser\\Application\\brave.exe",
+            Brave,
+        ),
         ("Chromium\\Application\\chrome.exe", Chromium),
     ] {
         for base in [&pf, &pf86, &local].iter().filter_map(|x| x.as_ref()) {

@@ -321,9 +321,7 @@ mod tests {
 
     #[test]
     fn left_tiles_subtracts_visibility() {
-        let info = PlayerInfo34Builder::new()
-            .add_many(&["1m"; 4])
-            .build();
+        let info = PlayerInfo34Builder::new().add_many(&["1m"; 4]).build();
         let left = info.compute_left_tiles();
         assert_eq!(left[0], 0); // we hold all four 1m
         assert_eq!(left[1], 4); // 2m untouched

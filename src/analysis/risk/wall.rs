@@ -117,9 +117,7 @@ pub fn one_chance(left: &Counts34) -> Vec<WallSafeTile> {
             if left_side && right_side {
                 let kind = if oc_and(left, &[idx - 2, idx - 1, idx + 1, idx + 2]) {
                     WallSafeType::DoubleOneChance
-                } else if oc_and(left, &[idx - 2, idx - 1])
-                    || oc_and(left, &[idx + 1, idx + 2])
-                {
+                } else if oc_and(left, &[idx - 2, idx - 1]) || oc_and(left, &[idx + 1, idx + 2]) {
                     WallSafeType::MixedOneChance
                 } else {
                     WallSafeType::OneChance

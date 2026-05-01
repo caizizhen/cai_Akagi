@@ -66,7 +66,12 @@ async fn end_to_end_pipeline_emits_analysis_for_seat_0() {
     let cache: AnalysisCache = Arc::new(RwLock::new(None));
 
     let _tracker = spawn_with_post(mjai.subscribe(), Some(post.clone()));
-    akagi::analysis::runner::spawn(post.subscribe(), _tracker.clone(), bus.clone(), cache.clone());
+    akagi::analysis::runner::spawn(
+        post.subscribe(),
+        _tracker.clone(),
+        bus.clone(),
+        cache.clone(),
+    );
 
     let mut rx = bus.subscribe();
     mjai.send(start_game(0)).unwrap();
@@ -107,7 +112,12 @@ async fn tracker_snapshot_emits_mahgen_view() {
     let cache: AnalysisCache = Arc::new(RwLock::new(None));
 
     let tracker = spawn_with_post(mjai.subscribe(), Some(post.clone()));
-    akagi::analysis::runner::spawn(post.subscribe(), tracker.clone(), _bus.clone(), cache.clone());
+    akagi::analysis::runner::spawn(
+        post.subscribe(),
+        tracker.clone(),
+        _bus.clone(),
+        cache.clone(),
+    );
 
     mjai.send(start_game(0)).unwrap();
     mjai.send(start_kyoku()).unwrap();
@@ -122,7 +132,10 @@ async fn tracker_snapshot_emits_mahgen_view() {
     // Self (seat 0) sees real tiles; others see backs.
     assert!(view.players[0].hand.contains('m') || view.players[0].hand.contains('p'));
     for op in 1..4 {
-        assert!(view.players[op].hand.ends_with('z'), "op{op} hand should be backs");
+        assert!(
+            view.players[op].hand.ends_with('z'),
+            "op{op} hand should be backs"
+        );
         // Hand of N tile-backs renders as N zeros + 'z'.
         assert!(
             view.players[op].hand.starts_with('0'),
@@ -141,7 +154,12 @@ async fn no_start_game_no_analysis() {
     let cache: AnalysisCache = Arc::new(RwLock::new(None));
 
     let _tracker = spawn_with_post(mjai.subscribe(), Some(post.clone()));
-    akagi::analysis::runner::spawn(post.subscribe(), _tracker.clone(), bus.clone(), cache.clone());
+    akagi::analysis::runner::spawn(
+        post.subscribe(),
+        _tracker.clone(),
+        bus.clone(),
+        cache.clone(),
+    );
 
     let mut rx = bus.subscribe();
     // Send start_kyoku WITHOUT a preceding start_game → no own_seat captured →
@@ -149,6 +167,9 @@ async fn no_start_game_no_analysis() {
     mjai.send(start_kyoku()).unwrap();
 
     let res = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await;
-    assert!(res.is_err(), "should time out — no analysis without start_game");
+    assert!(
+        res.is_err(),
+        "should time out — no analysis without start_game"
+    );
     assert!(cache.read().await.is_none());
 }

@@ -26,11 +26,9 @@ pub fn load_or_generate(dir: &Path) -> Result<RcgenAuthority> {
 
     let (cert_pem, key_pem) = if cert_pem_path.exists() && key_pem_path.exists() {
         info!("Loading CA from {}", dir.display());
-        let cert_pem =
-            std::fs::read_to_string(&cert_pem_path).context("Failed to read CA cert")?;
+        let cert_pem = std::fs::read_to_string(&cert_pem_path).context("Failed to read CA cert")?;
         let key_pem = std::fs::read_to_string(&key_pem_path).context("Failed to read CA key")?;
-        let key_pair_for_der =
-            KeyPair::from_pem(&key_pem).context("Failed to parse CA key")?;
+        let key_pair_for_der = KeyPair::from_pem(&key_pem).context("Failed to parse CA key")?;
         write_extra_pem_formats(dir, &cert_pem)?;
         write_extra_key_der(dir, &key_pair_for_der.serialize_der())?;
         (cert_pem, key_pem)
@@ -46,8 +44,8 @@ pub fn load_or_generate(dir: &Path) -> Result<RcgenAuthority> {
     };
 
     let key_pair = KeyPair::from_pem(&key_pem).context("Failed to parse CA key")?;
-    let issuer = Issuer::from_ca_cert_pem(&cert_pem, key_pair)
-        .context("Failed to parse CA certificate")?;
+    let issuer =
+        Issuer::from_ca_cert_pem(&cert_pem, key_pair).context("Failed to parse CA certificate")?;
 
     Ok(RcgenAuthority::new(
         issuer,

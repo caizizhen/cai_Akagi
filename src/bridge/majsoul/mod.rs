@@ -16,12 +16,12 @@ use super::{Bridge, Direction};
 use crate::{
     config::Platform,
     logger::{FlowLogger, Session},
-    schema::{MjaiEvent, mjai::Actor},
+    schema::{mjai::Actor, MjaiEvent},
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use chrono::Local;
 use parser::{LiqiParser, MessageType, ParsedMessage};
-use serde_json::{Value as JsonValue, json};
+use serde_json::{json, Value as JsonValue};
 use std::{collections::HashMap, sync::Arc};
 use tile::{compare_pai, ms_to_mjai};
 use tracing::{info, warn};
@@ -184,10 +184,7 @@ impl MajsoulBridge {
     fn dispatch(&mut self, msg: &ParsedMessage) -> Vec<MjaiEvent> {
         match (&msg.msg_type, msg.method_name.as_ref()) {
             (MessageType::Request, METHOD_AUTH_GAME) => {
-                self.account_id = msg
-                    .payload
-                    .get("account_id")
-                    .and_then(JsonValue::as_u64);
+                self.account_id = msg.payload.get("account_id").and_then(JsonValue::as_u64);
                 if self.account_id.is_none() {
                     warn!(
                         target: "akagi::bridge::majsoul",
@@ -230,9 +227,7 @@ impl MajsoulBridge {
         // Drain queued reach_accepted before the next non-Hule action. A
         // Hule on the riichi declaration tile voids the riichi, so we
         // discard the queued event in that case.
-        let pending_reach = if action_name == ACTION_HULE
-            || action_name == ACTION_DISCARD_TILE
-        {
+        let pending_reach = if action_name == ACTION_HULE || action_name == ACTION_DISCARD_TILE {
             // ActionDiscardTile right after a riichi declaration shouldn't
             // happen in practice (the declarer can't immediately discard
             // again), but if it does we leave the queue alone so the next
@@ -304,7 +299,9 @@ impl MajsoulBridge {
         match (new_marker, timing) {
             (Some(marker), Some(DoraTiming::PendingBeforeRinshan)) => {
                 // Ankan: 即乗り — flip dora, then rinshan tsumo.
-                events.push(MjaiEvent::Dora { dora_marker: marker });
+                events.push(MjaiEvent::Dora {
+                    dora_marker: marker,
+                });
                 events.push(MjaiEvent::Tsumo { actor, pai });
             }
             (Some(marker), Some(DoraTiming::PendingAfterRinshan)) => {
@@ -321,7 +318,9 @@ impl MajsoulBridge {
                     target: "akagi::bridge::majsoul",
                     "new dora marker {marker} without preceding kan; emitting before tsumo"
                 );
-                events.push(MjaiEvent::Dora { dora_marker: marker });
+                events.push(MjaiEvent::Dora {
+                    dora_marker: marker,
+                });
                 events.push(MjaiEvent::Tsumo { actor, pai });
             }
             (None, Some(DoraTiming::PendingBeforeRinshan))
@@ -369,7 +368,10 @@ impl MajsoulBridge {
             .get("moqie")
             .and_then(JsonValue::as_bool)
             .unwrap_or(false);
-        let is_riichi = data.get("is_liqi").and_then(JsonValue::as_bool).unwrap_or(false)
+        let is_riichi = data
+            .get("is_liqi")
+            .and_then(JsonValue::as_bool)
+            .unwrap_or(false)
             || data
                 .get("is_wliqi")
                 .and_then(JsonValue::as_bool)
@@ -377,7 +379,9 @@ impl MajsoulBridge {
 
         let mut events = Vec::with_capacity(3);
         if let Some(marker) = self.deferred_dora.take() {
-            events.push(MjaiEvent::Dora { dora_marker: marker });
+            events.push(MjaiEvent::Dora {
+                dora_marker: marker,
+            });
         }
         if is_riichi {
             events.push(MjaiEvent::Reach { actor });
@@ -447,9 +451,9 @@ impl MajsoulBridge {
         let mut pai = String::new();
         let mut consumed: Vec<String> = Vec::new();
         for (idx, from) in froms.iter().enumerate() {
-            let from_seat = from
-                .as_u64()
-                .context("ActionChiPengGang.froms[i] not a uint")? as Actor;
+            let from_seat =
+                from.as_u64()
+                    .context("ActionChiPengGang.froms[i] not a uint")? as Actor;
             let tile_raw = tiles[idx]
                 .as_str()
                 .context("ActionChiPengGang.tiles[i] not a string")?;
@@ -630,14 +634,20 @@ impl MajsoulBridge {
                 .get("seat")
                 .and_then(JsonValue::as_u64)
                 .context("HuleInfo missing seat")? as Actor;
-            let zimo = hule.get("zimo").and_then(JsonValue::as_bool).unwrap_or(false);
+            let zimo = hule
+                .get("zimo")
+                .and_then(JsonValue::as_bool)
+                .unwrap_or(false);
             let target = if zimo {
                 actor
             } else {
                 self.last_revealed_tile_actor
                     .context("ron win without preceding tile-revealing action")?
             };
-            let liqi = hule.get("liqi").and_then(JsonValue::as_bool).unwrap_or(false);
+            let liqi = hule
+                .get("liqi")
+                .and_then(JsonValue::as_bool)
+                .unwrap_or(false);
             let ura_markers = if liqi {
                 let arr = hule
                     .get("li_doras")
@@ -740,8 +750,9 @@ impl MajsoulBridge {
 
         let oya = ju;
         let n = self.num_players as usize;
-        let mut tehais: Vec<Vec<String>> =
-            (0..n).map(|_| vec![UNKNOWN_TILE.to_string(); TEHAI_SIZE]).collect();
+        let mut tehais: Vec<Vec<String>> = (0..n)
+            .map(|_| vec![UNKNOWN_TILE.to_string(); TEHAI_SIZE])
+            .collect();
 
         let tsumo_event = match my_tiles.len() {
             TEHAI_SIZE => {
@@ -926,7 +937,10 @@ fn fill_seat_row(tehais: &mut [Vec<String>], seat: Actor, row: Vec<String>) -> R
         bail!("seat {seat} out of range");
     }
     if row.len() != TEHAI_SIZE {
-        bail!("expected {TEHAI_SIZE} tiles for seat row, got {}", row.len());
+        bail!(
+            "expected {TEHAI_SIZE} tiles for seat row, got {}",
+            row.len()
+        );
     }
     tehais[seat as usize] = row;
     Ok(())
@@ -1137,8 +1151,7 @@ mod tests {
         let mut bridge = MajsoulBridge::new(None, None);
 
         // Req captures account_id, no events yet.
-        let events =
-            bridge.dispatch(&req(METHOD_AUTH_GAME, json!({ "account_id": 12345 })));
+        let events = bridge.dispatch(&req(METHOD_AUTH_GAME, json!({ "account_id": 12345 })));
         assert!(events.is_empty());
         assert_eq!(bridge.account_id, Some(12345));
         assert_eq!(bridge.seat, None);
@@ -1165,7 +1178,12 @@ mod tests {
                 assert_eq!(*num_players, 4);
                 assert_eq!(
                     names,
-                    &vec!["".to_string(), "".to_string(), "player_a".to_string(), "".to_string()]
+                    &vec![
+                        "".to_string(),
+                        "".to_string(),
+                        "player_a".to_string(),
+                        "".to_string()
+                    ]
                 );
             }
             other => panic!("expected StartGame, got {other:?}"),
@@ -1235,7 +1253,12 @@ mod tests {
         assert_eq!(bridge.seat, Some(1));
         assert_eq!(bridge.num_players, 3);
         match &events[0] {
-            MjaiEvent::StartGame { id, names, num_players, .. } => {
+            MjaiEvent::StartGame {
+                id,
+                names,
+                num_players,
+                ..
+            } => {
                 assert_eq!(*id, Some(1));
                 assert_eq!(*num_players, 3);
                 assert_eq!(
@@ -1269,7 +1292,10 @@ mod tests {
             } => {
                 assert_eq!(*id, Some(1));
                 assert_eq!(*num_players, 3);
-                assert_eq!(names, &vec!["".to_string(), "me".to_string(), "".to_string()]);
+                assert_eq!(
+                    names,
+                    &vec!["".to_string(), "me".to_string(), "".to_string()]
+                );
             }
             other => panic!("expected StartGame, got {other:?}"),
         }
@@ -1302,8 +1328,10 @@ mod tests {
     #[test]
     fn unrelated_methods_pass_through() {
         let mut bridge = MajsoulBridge::new(None, None);
-        let events =
-            bridge.dispatch(&req(".lq.Lobby.heatbeat", json!({ "no_operation_counter": 0 })));
+        let events = bridge.dispatch(&req(
+            ".lq.Lobby.heatbeat",
+            json!({ "no_operation_counter": 0 }),
+        ));
         assert!(events.is_empty());
     }
 
@@ -1321,9 +1349,9 @@ mod tests {
 
         // Manually install a "first game" log to simulate what
         // rotate_mjai_log would have done — without needing a full Session.
-        let first =
-            Arc::new(FlowLogger::new(tmp.path(), "majsoul", "majsoul_first.mjai.jsonl", "first")
-                .unwrap());
+        let first = Arc::new(
+            FlowLogger::new(tmp.path(), "majsoul", "majsoul_first.mjai.jsonl", "first").unwrap(),
+        );
         bridge.mjai_log = Some(first);
         bridge.dispatch(&req(METHOD_AUTH_GAME, json!({ "account_id": 1 })));
         let events = bridge.dispatch(&resp(
@@ -1340,8 +1368,7 @@ mod tests {
         // Sleep > 1ms so the timestamp differs (filename includes millis).
         std::thread::sleep(Duration::from_millis(2));
         let second = Arc::new(
-            FlowLogger::new(tmp.path(), "majsoul", "majsoul_second.mjai.jsonl", "second")
-                .unwrap(),
+            FlowLogger::new(tmp.path(), "majsoul", "majsoul_second.mjai.jsonl", "second").unwrap(),
         );
         bridge.mjai_log = Some(second);
         bridge.dispatch(&req(METHOD_AUTH_GAME, json!({ "account_id": 2 })));
@@ -1446,7 +1473,8 @@ mod tests {
                 assert_eq!(
                     tehais[2],
                     vec![
-                        "2m", "5m", "7m", "8m", "3p", "6p", "7p", "1s", "3s", "5sr", "6s", "S", "C",
+                        "2m", "5m", "7m", "8m", "3p", "6p", "7p", "1s", "3s", "5sr", "6s", "S",
+                        "C",
                     ]
                     .into_iter()
                     .map(String::from)
@@ -1483,15 +1511,20 @@ mod tests {
         let events = bridge.dispatch(&msg);
         assert_eq!(events.len(), 2);
         match &events[0] {
-            MjaiEvent::StartKyoku { oya, tehais, dora_marker, .. } => {
+            MjaiEvent::StartKyoku {
+                oya,
+                tehais,
+                dora_marker,
+                ..
+            } => {
                 assert_eq!(*oya, 0);
                 assert_eq!(dora_marker, "1m");
                 // First 13 tiles, sorted (already in mjai order here).
                 assert_eq!(
                     tehais[0],
                     [
-                        "1m", "2m", "3m", "4m", "5m", "6m", "7m", "8m", "9m",
-                        "1p", "2p", "3p", "4p",
+                        "1m", "2m", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p",
+                        "4p",
                     ]
                     .map(String::from)
                 );
@@ -1599,7 +1632,8 @@ mod tests {
                 assert_eq!(
                     tehais[0],
                     vec![
-                        "1m", "9m", "1p", "4p", "6p", "2s", "6s", "7s", "8s", "8s", "9s", "9s", "P",
+                        "1m", "9m", "1p", "4p", "6p", "2s", "6s", "7s", "8s", "8s", "9s", "9s",
+                        "P",
                     ]
                     .into_iter()
                     .map(String::from)
@@ -1744,10 +1778,7 @@ mod tests {
     fn action_deal_tile_ignores_tile_for_other_seat() {
         let mut bridge = MajsoulBridge::new(None, None);
         bridge.seat = Some(2);
-        let msg = action_msg(
-            ACTION_DEAL_TILE,
-            json!({ "seat": 1, "tile": "5m" }),
-        );
+        let msg = action_msg(ACTION_DEAL_TILE, json!({ "seat": 1, "tile": "5m" }));
         match &bridge.dispatch(&msg)[0] {
             MjaiEvent::Tsumo { actor, pai } => {
                 assert_eq!(*actor, 1);
@@ -1765,7 +1796,11 @@ mod tests {
         bridge.seat = Some(2);
         let msg = action_msg(ACTION_DISCARD_TILE, json!({ "tile": "9s" }));
         match &bridge.dispatch(&msg)[0] {
-            MjaiEvent::Dahai { actor, pai, tsumogiri } => {
+            MjaiEvent::Dahai {
+                actor,
+                pai,
+                tsumogiri,
+            } => {
                 assert_eq!(*actor, 0);
                 assert_eq!(pai, "9s");
                 assert!(!*tsumogiri);
@@ -1784,7 +1819,11 @@ mod tests {
             json!({ "moqie": true, "seat": 1, "tile": "4z" }),
         );
         match &bridge.dispatch(&msg)[0] {
-            MjaiEvent::Dahai { actor, pai, tsumogiri } => {
+            MjaiEvent::Dahai {
+                actor,
+                pai,
+                tsumogiri,
+            } => {
                 assert_eq!(*actor, 1);
                 assert_eq!(pai, "N"); // 4z → N (north)
                 assert!(*tsumogiri);
@@ -1803,7 +1842,11 @@ mod tests {
             json!({ "moqie": false, "seat": 3, "tile": "0s" }),
         );
         match &bridge.dispatch(&msg)[0] {
-            MjaiEvent::Dahai { actor, pai, tsumogiri } => {
+            MjaiEvent::Dahai {
+                actor,
+                pai,
+                tsumogiri,
+            } => {
                 assert_eq!(*actor, 3);
                 assert_eq!(pai, "5sr"); // red 5s
                 assert!(!*tsumogiri);
@@ -1826,12 +1869,12 @@ mod tests {
     fn action_discard_tile_missing_tile_skips() {
         let mut bridge = MajsoulBridge::new(None, None);
         bridge.seat = Some(0);
-        assert!(bridge.dispatch(&action_msg(ACTION_DISCARD_TILE, json!({}))).is_empty());
-        assert!(
-            bridge
-                .dispatch(&action_msg(ACTION_DISCARD_TILE, json!({ "tile": "" })))
-                .is_empty()
-        );
+        assert!(bridge
+            .dispatch(&action_msg(ACTION_DISCARD_TILE, json!({})))
+            .is_empty());
+        assert!(bridge
+            .dispatch(&action_msg(ACTION_DISCARD_TILE, json!({ "tile": "" })))
+            .is_empty());
     }
 
     #[test]
@@ -1856,11 +1899,20 @@ mod tests {
     fn kakan_consumed_red_handling() {
         // Adding normal 5m on top of an existing pon → the pon must
         // already contain the red.
-        assert_eq!(super::kakan_consumed("5m"), ["5mr", "5m", "5m"].map(String::from));
+        assert_eq!(
+            super::kakan_consumed("5m"),
+            ["5mr", "5m", "5m"].map(String::from)
+        );
         // Adding the red 5m → existing pon was three normal 5m.
-        assert_eq!(super::kakan_consumed("5mr"), ["5m", "5m", "5m"].map(String::from));
+        assert_eq!(
+            super::kakan_consumed("5mr"),
+            ["5m", "5m", "5m"].map(String::from)
+        );
         // Non-five tiles never have a red form.
-        assert_eq!(super::kakan_consumed("9p"), ["9p", "9p", "9p"].map(String::from));
+        assert_eq!(
+            super::kakan_consumed("9p"),
+            ["9p", "9p", "9p"].map(String::from)
+        );
     }
 
     /// Pon by us on actor 1's discard. Three of the four entries in
@@ -1879,7 +1931,12 @@ mod tests {
             }),
         );
         match &bridge.dispatch(&msg)[0] {
-            MjaiEvent::Pon { actor, target, pai, consumed } => {
+            MjaiEvent::Pon {
+                actor,
+                target,
+                pai,
+                consumed,
+            } => {
                 assert_eq!(*actor, 2);
                 assert_eq!(*target, 1);
                 assert_eq!(pai, "4m");
@@ -1906,7 +1963,12 @@ mod tests {
             }),
         );
         match &bridge.dispatch(&msg)[0] {
-            MjaiEvent::Chi { actor, target, pai, consumed } => {
+            MjaiEvent::Chi {
+                actor,
+                target,
+                pai,
+                consumed,
+            } => {
                 assert_eq!(*actor, 1);
                 assert_eq!(*target, 0);
                 assert_eq!(pai, "3m");
@@ -2043,7 +2105,12 @@ mod tests {
             }),
         );
         match &bridge.dispatch(&msg)[0] {
-            MjaiEvent::Daiminkan { actor, target, pai, consumed } => {
+            MjaiEvent::Daiminkan {
+                actor,
+                target,
+                pai,
+                consumed,
+            } => {
                 assert_eq!(*actor, 2);
                 assert_eq!(*target, 0);
                 assert_eq!(pai, "7s");
@@ -2084,7 +2151,11 @@ mod tests {
             json!({ "seat": 0, "type": 2, "tiles": "0p" }),
         );
         match &bridge.dispatch(&msg)[0] {
-            MjaiEvent::Kakan { actor, pai, consumed } => {
+            MjaiEvent::Kakan {
+                actor,
+                pai,
+                consumed,
+            } => {
                 assert_eq!(*actor, 0);
                 assert_eq!(pai, "5pr");
                 // New tile is the red, so existing 3 are normal.
@@ -2176,7 +2247,11 @@ mod tests {
             other => panic!("expected Dora first, got {other:?}"),
         }
         match &events[1] {
-            MjaiEvent::Dahai { actor, pai, tsumogiri } => {
+            MjaiEvent::Dahai {
+                actor,
+                pai,
+                tsumogiri,
+            } => {
                 assert_eq!(*actor, 2);
                 assert_eq!(pai, "9p");
                 assert!(*tsumogiri);
@@ -2234,7 +2309,11 @@ mod tests {
             other => panic!("expected Reach first, got {other:?}"),
         }
         match &events[1] {
-            MjaiEvent::Dahai { actor, pai, tsumogiri } => {
+            MjaiEvent::Dahai {
+                actor,
+                pai,
+                tsumogiri,
+            } => {
                 assert_eq!(*actor, 1);
                 assert_eq!(pai, "E");
                 assert!(!*tsumogiri);
@@ -2303,7 +2382,14 @@ mod tests {
             }),
         ));
         assert!(matches!(events[0], MjaiEvent::ReachAccepted { actor: 1 }));
-        assert!(matches!(events[1], MjaiEvent::Pon { actor: 2, target: 1, .. }));
+        assert!(matches!(
+            events[1],
+            MjaiEvent::Pon {
+                actor: 2,
+                target: 1,
+                ..
+            }
+        ));
     }
 
     /// New kyoku must clear any leftover reach state.
@@ -2460,10 +2546,7 @@ mod tests {
     fn action_liu_ju_emits_ryukyoku_no_deltas_then_end_kyoku() {
         let mut bridge = MajsoulBridge::new(None, None);
         bridge.seat = Some(0);
-        let events = bridge.dispatch(&action_msg(
-            ACTION_LIU_JU,
-            json!({ "type": 1, "seat": 0 }),
-        ));
+        let events = bridge.dispatch(&action_msg(ACTION_LIU_JU, json!({ "type": 1, "seat": 0 })));
         assert_eq!(events.len(), 2);
         match &events[0] {
             MjaiEvent::Ryukyoku { deltas } => assert!(deltas.is_none()),
@@ -2527,7 +2610,12 @@ mod tests {
         ));
         assert_eq!(events.len(), 2);
         match &events[0] {
-            MjaiEvent::Hora { actor, target, deltas, ura_markers } => {
+            MjaiEvent::Hora {
+                actor,
+                target,
+                deltas,
+                ura_markers,
+            } => {
                 assert_eq!(*actor, 3);
                 assert_eq!(*target, 2);
                 assert_eq!(*deltas, Some(vec![0, 0, -2000, 2000]));
@@ -2552,7 +2640,12 @@ mod tests {
             }),
         ));
         match &events[0] {
-            MjaiEvent::Hora { actor, target, deltas, ura_markers } => {
+            MjaiEvent::Hora {
+                actor,
+                target,
+                deltas,
+                ura_markers,
+            } => {
                 assert_eq!(*actor, 0);
                 assert_eq!(*target, 0);
                 assert_eq!(*deltas, Some(vec![4000, -2000, -1000, -1000]));
@@ -2677,7 +2770,9 @@ mod tests {
             }),
         ));
         assert!(
-            !events.iter().any(|e| matches!(e, MjaiEvent::ReachAccepted { .. })),
+            !events
+                .iter()
+                .any(|e| matches!(e, MjaiEvent::ReachAccepted { .. })),
             "ron on declaration tile must NOT emit reach_accepted"
         );
         assert!(bridge.pending_reach_accepted.is_none());
@@ -2832,7 +2927,12 @@ mod tests {
         ));
         assert_eq!(events.len(), 2);
         match &events[0] {
-            MjaiEvent::Hora { actor, target, deltas, ura_markers } => {
+            MjaiEvent::Hora {
+                actor,
+                target,
+                deltas,
+                ura_markers,
+            } => {
                 assert_eq!(*actor, 2);
                 assert_eq!(*target, 0);
                 assert_eq!(*deltas, Some(vec![-12000, 0, 13000]));
@@ -2924,7 +3024,9 @@ mod tests {
         assert_eq!(bridge.pending_reach_accepted, Some(1));
         let events = bridge.dispatch(&action_msg(ACTION_HULE, json!({})));
         assert!(
-            !events.iter().any(|e| matches!(e, MjaiEvent::ReachAccepted { .. })),
+            !events
+                .iter()
+                .any(|e| matches!(e, MjaiEvent::ReachAccepted { .. })),
             "no reach_accepted on ron of declaration tile"
         );
         assert!(bridge.pending_reach_accepted.is_none());

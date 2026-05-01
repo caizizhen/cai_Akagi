@@ -230,9 +230,7 @@ async fn spawn_bot_manager(
     }
 
     let runtime = runtime.ok_or_else(|| {
-        anyhow::anyhow!(
-            "bot mode is enabled but no python3+uv runtime was found on PATH"
-        )
+        anyhow::anyhow!("bot mode is enabled but no python3+uv runtime was found on PATH")
     })?;
 
     let manager = bot::BotManager::new(

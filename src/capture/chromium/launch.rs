@@ -10,7 +10,7 @@
 //!    (Windows) → wait → SIGKILL.
 
 use crate::config::ChromiumConfig;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use std::path::Path;
 use std::time::Duration;
 use tokio::process::{Child, Command};
@@ -61,9 +61,9 @@ pub fn spawn(exe: &Path, profile: &Path, cfg: &ChromiumConfig) -> Result<Child> 
     // as crashed; without this the user sees the bubble on every relaunch).
     suppress_crash_recovery_prompt(profile);
     cmd.kill_on_drop(true);
-    let child = cmd.spawn().with_context(|| {
-        format!("failed to spawn chromium binary at {}", exe.display())
-    })?;
+    let child = cmd
+        .spawn()
+        .with_context(|| format!("failed to spawn chromium binary at {}", exe.display()))?;
     debug!("spawned chromium pid={:?}", child.id());
     Ok(child)
 }
@@ -148,16 +148,11 @@ fn suppress_crash_recovery_prompt(profile: &Path) {
         debug!("Preferences JSON parse failed — leaving as-is");
         return;
     };
-    let Some(profile_obj) = json
-        .get_mut("profile")
-        .and_then(|v| v.as_object_mut())
-    else {
+    let Some(profile_obj) = json.get_mut("profile").and_then(|v| v.as_object_mut()) else {
         return;
     };
-    let needs_write = profile_obj.get("exit_type").and_then(|v| v.as_str())
-        != Some("Normal")
-        || profile_obj.get("exited_cleanly").and_then(|v| v.as_bool())
-            != Some(true);
+    let needs_write = profile_obj.get("exit_type").and_then(|v| v.as_str()) != Some("Normal")
+        || profile_obj.get("exited_cleanly").and_then(|v| v.as_bool()) != Some(true);
     if !needs_write {
         return;
     }
@@ -198,7 +193,10 @@ pub async fn terminate(child: &mut Child) {
                 .status();
         }
     }
-    if tokio::time::timeout(TERM_GRACE, child.wait()).await.is_err() {
+    if tokio::time::timeout(TERM_GRACE, child.wait())
+        .await
+        .is_err()
+    {
         warn!("chromium did not exit after SIGTERM, sending SIGKILL");
         let _ = child.kill().await;
         let _ = tokio::time::timeout(KILL_GRACE, child.wait()).await;
@@ -214,7 +212,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let default_dir = dir.path().join("Default");
         std::fs::create_dir_all(&default_dir).unwrap();
-        for name in ["Current Session", "Current Tabs", "Last Session", "Last Tabs"] {
+        for name in [
+            "Current Session",
+            "Current Tabs",
+            "Last Session",
+            "Last Tabs",
+        ] {
             std::fs::write(default_dir.join(name), b"stale").unwrap();
         }
         std::fs::create_dir_all(default_dir.join("Sessions")).unwrap();
@@ -223,7 +226,12 @@ mod tests {
 
         clear_session_state(dir.path());
 
-        for name in ["Current Session", "Current Tabs", "Last Session", "Last Tabs"] {
+        for name in [
+            "Current Session",
+            "Current Tabs",
+            "Last Session",
+            "Last Tabs",
+        ] {
             assert!(!default_dir.join(name).exists(), "still exists: {name}");
         }
         assert!(!default_dir.join("Sessions").exists());

@@ -64,10 +64,7 @@ fn meld_to_riichienv(m: &Meld34) -> RiMeld {
         }
     }
     let opened = !matches!(m.kind, Meld34Kind::Ankan);
-    let called_136 = m
-        .called_tile
-        .map(|t| t.idx() * 4)
-        .filter(|_| opened);
+    let called_136 = m.called_tile.map(|t| t.idx() * 4).filter(|_| opened);
     RiMeld::new(
         mt,
         tiles_136,
@@ -131,14 +128,13 @@ pub fn expectation(info: &PlayerInfo34, waits: &Waits, allow_riichi: bool) -> Sc
     if waits.is_empty() {
         return ScoreEstimate::default();
     }
-    let dora_indicators_136: Vec<u8> = info
-        .dora_indicators
-        .iter()
-        .map(|t| t.idx() * 4)
-        .collect();
+    let dora_indicators_136: Vec<u8> = info.dora_indicators.iter().map(|t| t.idx() * 4).collect();
     let evaluator = build_evaluator(info);
 
-    let is_open = info.melds.iter().any(|m| !matches!(m.kind, Meld34Kind::Ankan));
+    let is_open = info
+        .melds
+        .iter()
+        .any(|m| !matches!(m.kind, Meld34Kind::Ankan));
     let round_wind = wind_from_tile(info.bakaze);
     let player_wind = wind_from_tile(info.jikaze);
 

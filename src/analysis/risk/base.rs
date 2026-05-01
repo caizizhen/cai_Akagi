@@ -6,9 +6,7 @@
 
 use super::wall;
 use crate::analysis::data::agari::{TileTypeKind, TILE_TYPE_TABLE};
-use crate::analysis::data::risk::{
-    FIXED_DORA_RISK_MULTI, HONOR_TILE_TYPE, MAX_TURN, RISK_RATE,
-};
+use crate::analysis::data::risk::{FIXED_DORA_RISK_MULTI, HONOR_TILE_TYPE, MAX_TURN, RISK_RATE};
 use crate::analysis::hand::Counts34;
 use crate::analysis::tile::{Tile34, HONOR_BASE, HONOR_C, TILE_COUNT};
 
@@ -143,9 +141,8 @@ pub fn risk_tiles(
             risk[i] = 0.0;
             continue;
         }
-        let is_yakuhai = (i as u8) == bakaze_tile.idx()
-            || (i as u8) == jikaze_tile.idx()
-            || (i as u8) >= 31; // P / F / C (always yakuhai)
+        let is_yakuhai =
+            (i as u8) == bakaze_tile.idx() || (i as u8) == jikaze_tile.idx() || (i as u8) >= 31; // P / F / C (always yakuhai)
         let row_idx = if is_yakuhai { 1 } else { 0 };
         let col_idx = (left_count.saturating_sub(1) as usize).min(3);
         let k = HONOR_TILE_TYPE[row_idx][col_idx];

@@ -9,6 +9,6 @@ pub mod mjai;
 
 pub use ipc::{
     BotInfo, BotSettings, BotStatus, CaptureKind, CaptureStatus, HoraScoreInfo, LoadStage,
-    NotifyLevel, Notification, Snapshot,
+    Notification, NotifyLevel, Snapshot,
 };
 pub use mjai::MjaiEvent;

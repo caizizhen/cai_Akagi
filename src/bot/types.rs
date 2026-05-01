@@ -52,7 +52,11 @@ mod tests {
         let line = r#"{"type":"dahai","actor":0,"pai":"9m","tsumogiri":false,"meta":{"q_values":[0.12,0.05,0.85],"confidence":0.87}}"#;
         let resp: BotResponse = serde_json::from_str(line).unwrap();
         match &resp.action {
-            MjaiEvent::Dahai { actor, pai, tsumogiri } => {
+            MjaiEvent::Dahai {
+                actor,
+                pai,
+                tsumogiri,
+            } => {
                 assert_eq!(*actor, 0);
                 assert_eq!(pai, "9m");
                 assert!(!tsumogiri);
@@ -81,7 +85,10 @@ mod tests {
             meta: None,
         };
         let out = serde_json::to_string(&resp).unwrap();
-        assert!(!out.contains("meta"), "meta:None should not be emitted: {out}");
+        assert!(
+            !out.contains("meta"),
+            "meta:None should not be emitted: {out}"
+        );
     }
 
     #[test]

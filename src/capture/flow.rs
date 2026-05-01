@@ -15,8 +15,8 @@ use crate::logger::Session;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::{
-    Arc, Mutex as StdMutex,
     atomic::{AtomicU64, Ordering},
+    Arc, Mutex as StdMutex,
 };
 use tracing::warn;
 

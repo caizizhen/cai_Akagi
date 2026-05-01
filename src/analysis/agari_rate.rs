@@ -127,7 +127,11 @@ pub fn average(
     }
 
     // Ryanmen / sanmen-machi adjust: same-suit waits separated by 3.
-    let mut wait_tiles: Vec<u8> = waits.iter().filter(|(_, l)| *l > 0).map(|(t, _)| t).collect();
+    let mut wait_tiles: Vec<u8> = waits
+        .iter()
+        .filter(|(_, l)| *l > 0)
+        .map(|(t, _)| t)
+        .collect();
     if wait_tiles.len() > 1 {
         if wait_tiles.iter().any(|&t| t >= 27) {
             return agg;

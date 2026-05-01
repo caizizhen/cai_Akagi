@@ -17,7 +17,7 @@ pub mod runtime;
 pub mod sync_guard;
 pub mod types;
 
-pub use install::{GithubInstallSpec, install_from_github_release};
+pub use install::{install_from_github_release, GithubInstallSpec};
 pub use manager::BotManager;
 pub use manifest::{BotSource, FieldKind, FieldSpec, Manifest, ManifestBot};
 pub use registry::{BotEntry, BotRegistry};

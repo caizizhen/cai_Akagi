@@ -83,9 +83,8 @@ pub fn evaluate_hora_4p(state: &GameState, actor: u8, is_tsumo: bool) -> Option<
 
     let evaluator = HandEvaluator::new(player.hand.clone(), player.melds.clone());
 
-    let first_turn = is_tsumo
-        && player.discards.is_empty()
-        && state.players.iter().all(|p| p.melds.is_empty());
+    let first_turn =
+        is_tsumo && player.discards.is_empty() && state.players.iter().all(|p| p.melds.is_empty());
 
     let conditions = Conditions {
         tsumo: is_tsumo,
@@ -157,9 +156,8 @@ pub fn evaluate_hora_3p(state: &GameState3P, actor: u8, is_tsumo: bool) -> Optio
 
     let evaluator = HandEvaluator::new(player.hand.clone(), player.melds.clone());
 
-    let first_turn = is_tsumo
-        && player.discards.is_empty()
-        && state.players.iter().all(|p| p.melds.is_empty());
+    let first_turn =
+        is_tsumo && player.discards.is_empty() && state.players.iter().all(|p| p.melds.is_empty());
 
     let conditions = Conditions {
         tsumo: is_tsumo,
@@ -196,9 +194,7 @@ pub fn evaluate_hora_3p(state: &GameState3P, actor: u8, is_tsumo: bool) -> Optio
             result.tsumo_agari_ko.saturating_mul(2)
         } else {
             // Non-dealer tsumo (3p): 1 oya pay + 1 ko pay.
-            result
-                .tsumo_agari_oya
-                .saturating_add(result.tsumo_agari_ko)
+            result.tsumo_agari_oya.saturating_add(result.tsumo_agari_ko)
         }
     } else {
         result.ron_agari
@@ -274,7 +270,7 @@ mod tests {
             44, 45, // 3p 3p
             48, 49, // 4p 4p
             92, 93, // 6s 6s
-            96, 97, // 7s 7s
+            96, 97,  // 7s 7s
             100, // 8s (lone — chiitoitsu wait)
         ];
         s.players[actor as usize].hand = hand;

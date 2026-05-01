@@ -182,10 +182,7 @@ mod tests {
     #[test]
     fn agari_table_structure() {
         // No-suji 19 with 4 left = 54.0% (peak)
-        assert_eq!(
-            AGARI_NUMBER[TileTypeKind::NoSuji19 as usize][4],
-            54.0
-        );
+        assert_eq!(AGARI_NUMBER[TileTypeKind::NoSuji19 as usize][4], 54.0);
         // Suji 1/9 with 4 left = 0 (impossible — used for symmetry)
         assert_eq!(AGARI_NUMBER[TileTypeKind::Suji19 as usize][4], 0.0);
     }

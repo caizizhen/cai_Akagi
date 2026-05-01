@@ -24,7 +24,7 @@
 
 use crate::event_bus::NotifyBus;
 use crate::schema::Notification;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use tokio::io::AsyncWriteExt;
@@ -343,8 +343,7 @@ pub async fn install(channel: &Channel, notify: &NotifyBus) -> Result<String> {
     );
     std::fs::create_dir_all(&install_dir)
         .with_context(|| format!("create {}", install_dir.display()))?;
-    crate::bot::install::extract_zip_safe(&zip_path, &install_dir)
-        .context("extract CfT zip")?;
+    crate::bot::install::extract_zip_safe(&zip_path, &install_dir).context("extract CfT zip")?;
     let _ = std::fs::remove_file(&zip_path);
 
     if let Some(platform) = cft_platform() {
@@ -361,9 +360,8 @@ pub async fn install(channel: &Channel, notify: &NotifyBus) -> Result<String> {
         post_extract_fixup(&exe, &install_dir);
     }
 
-    let _ = notify.send(
-        Notification::success(format!("Chrome for Testing {version} installed")).id(toast),
-    );
+    let _ = notify
+        .send(Notification::success(format!("Chrome for Testing {version} installed")).id(toast));
     Ok(version)
 }
 
@@ -399,7 +397,9 @@ fn post_extract_fixup(exe: &Path, install_dir: &Path) {
             .stdout(std::process::Stdio::null())
             .status();
         match status {
-            Ok(s) if s.success() => debug!("stripped quarantine xattr from {}", install_dir.display()),
+            Ok(s) if s.success() => {
+                debug!("stripped quarantine xattr from {}", install_dir.display())
+            }
             Ok(s) => warn!("xattr exited {s} (non-fatal)"),
             Err(e) => warn!("xattr not found / failed: {e} (non-fatal)"),
         }
@@ -478,7 +478,11 @@ mod tests {
     fn cft_platform_returns_known_string_on_supported_targets() {
         // Just exercise the cfg branches — actual value depends on host.
         let p = cft_platform();
-        if cfg!(any(target_os = "linux", target_os = "macos", target_os = "windows")) {
+        if cfg!(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows"
+        )) {
             assert!(p.is_some());
             let s = p.unwrap();
             assert!(["linux64", "mac-arm64", "mac-x64", "win64", "win32"].contains(&s));
@@ -506,7 +510,11 @@ mod tests {
 
     #[test]
     fn version_sort_orders_numerically() {
-        let mut v = vec!["129.0.6668.58".to_string(), "131.0.6778.85".into(), "130.0.6723.92".into()];
+        let mut v = vec![
+            "129.0.6668.58".to_string(),
+            "131.0.6778.85".into(),
+            "130.0.6723.92".into(),
+        ];
         v.sort_by_key(|x| std::cmp::Reverse(version_sort_key(x)));
         assert_eq!(
             v,

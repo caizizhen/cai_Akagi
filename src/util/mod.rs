@@ -39,11 +39,7 @@ pub fn resolve_dir(configured: &Path) -> PathBuf {
     resolve_dir_inner(configured, is_appimage(), user_config_root())
 }
 
-fn resolve_dir_inner(
-    configured: &Path,
-    appimage: bool,
-    user_root: Option<PathBuf>,
-) -> PathBuf {
+fn resolve_dir_inner(configured: &Path, appimage: bool, user_root: Option<PathBuf>) -> PathBuf {
     if configured.is_absolute() {
         return configured.to_path_buf();
     }
@@ -80,20 +76,13 @@ mod tests {
     fn strip_leading_dot_removes_dotslash() {
         assert_eq!(strip_leading_dot(Path::new("./logs")), Path::new("logs"));
         assert_eq!(strip_leading_dot(Path::new("logs")), Path::new("logs"));
-        assert_eq!(
-            strip_leading_dot(Path::new("./a/b")),
-            Path::new("a/b")
-        );
+        assert_eq!(strip_leading_dot(Path::new("./a/b")), Path::new("a/b"));
     }
 
     #[test]
     fn appimage_routes_relative_path_to_user_config() {
         let user_root = PathBuf::from("/home/u/.config/akagi");
-        let resolved = resolve_dir_inner(
-            Path::new("./logs"),
-            true,
-            Some(user_root.clone()),
-        );
+        let resolved = resolve_dir_inner(Path::new("./logs"), true, Some(user_root.clone()));
         assert_eq!(resolved, user_root.join("logs"));
     }
 
@@ -112,8 +101,11 @@ mod tests {
         // Non-appimage with a path that doesn't exist anywhere should NOT
         // fall back to user_root; it returns the exe-relative candidate.
         let user_root = PathBuf::from("/home/u/.config/akagi");
-        let resolved =
-            resolve_dir_inner(Path::new("./nonexistent-xyz"), false, Some(user_root.clone()));
+        let resolved = resolve_dir_inner(
+            Path::new("./nonexistent-xyz"),
+            false,
+            Some(user_root.clone()),
+        );
         assert!(!resolved.starts_with(&user_root));
     }
 }

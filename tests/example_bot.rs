@@ -51,8 +51,11 @@ async fn spawn_example(actor_id: u8) -> Option<SubprocessBot> {
     // We bypass `runtime.ensure_synced` (it would call `uv sync` and is
     // covered by `runtime.rs` tests). Use `from_paths` purely so the bot
     // has *some* runtime reference for `reset()` to respawn against.
-    let runtime =
-        PythonRuntime::from_paths(py.clone(), PathBuf::from("/dev/null/uv"), RuntimeMode::System);
+    let runtime = PythonRuntime::from_paths(
+        py.clone(),
+        PathBuf::from("/dev/null/uv"),
+        RuntimeMode::System,
+    );
     Some(
         SubprocessBot::spawn_with_command(cmd, runtime, &bot_dir, actor_id)
             .await

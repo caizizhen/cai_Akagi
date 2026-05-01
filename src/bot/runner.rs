@@ -8,7 +8,7 @@
 use crate::bot::runtime::PythonRuntime;
 use crate::bot::types::BotResponse;
 use crate::schema::MjaiEvent;
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -69,11 +69,7 @@ impl SubprocessBot {
     /// exposed via the `AKAGI_PLAYER_ID` env var. Argv form matches the
     /// mjai.app convention so bots written for that platform run
     /// unmodified.
-    pub async fn spawn(
-        runtime: &PythonRuntime,
-        bot_dir: &Path,
-        actor_id: u8,
-    ) -> Result<Self> {
+    pub async fn spawn(runtime: &PythonRuntime, bot_dir: &Path, actor_id: u8) -> Result<Self> {
         runtime.ensure_synced(bot_dir).await?;
         let mut cmd = runtime.command_for(bot_dir, &["bot.py"]);
         cmd.arg(actor_id.to_string());

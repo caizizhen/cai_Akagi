@@ -74,12 +74,17 @@ impl ChromiumBackend {
 #[async_trait]
 impl CaptureBackend for ChromiumBackend {
     async fn run(self: Box<Self>, ctx: CaptureCtx, shutdown: ShutdownToken) -> Result<()> {
-        let exe = self.resolve_executable().context("resolving chromium executable")?;
+        let exe = self
+            .resolve_executable()
+            .context("resolving chromium executable")?;
         let profile_dir = profile::resolve_profile_dir(&self.cfg.user_data_dir)?;
         std::fs::create_dir_all(&profile_dir)
             .with_context(|| format!("creating chromium profile dir {}", profile_dir.display()))?;
         if let Err(e) = profile::clear_stale_singleton(&profile_dir) {
-            warn!("singleton-lock cleanup at {} failed: {e:#}", profile_dir.display());
+            warn!(
+                "singleton-lock cleanup at {} failed: {e:#}",
+                profile_dir.display()
+            );
         }
 
         info!(
@@ -88,10 +93,11 @@ impl CaptureBackend for ChromiumBackend {
             profile_dir.display()
         );
 
-        let mut child = launch::spawn(&exe, &profile_dir, &self.cfg)
-            .context("launching chromium")?;
+        let mut child =
+            launch::spawn(&exe, &profile_dir, &self.cfg).context("launching chromium")?;
 
-        let cdp_endpoint = launch::wait_for_devtools_port(&profile_dir).await
+        let cdp_endpoint = launch::wait_for_devtools_port(&profile_dir)
+            .await
             .context("reading DevToolsActivePort (chromium failed to start?)")?;
         info!("chromium CDP endpoint: {cdp_endpoint}");
 

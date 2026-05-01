@@ -35,7 +35,7 @@ use riichienv_core::rule::GameRule;
 use riichienv_core::state::GameState;
 use riichienv_core::state_3p::GameState3P;
 use std::sync::Arc;
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{broadcast, Mutex};
 use tracing::{info, warn};
 
 /// Engine state, varying by player count. Both variants accept the same
@@ -81,7 +81,10 @@ impl GameTracker {
     pub fn handle(&mut self, ev: &AkagiEvent) -> Result<()> {
         self.events_seen += 1;
 
-        if let AkagiEvent::StartGame { id, num_players, .. } = ev {
+        if let AkagiEvent::StartGame {
+            id, num_players, ..
+        } = ev
+        {
             // Fresh game → fresh state. Constructor seeds round 0 with the
             // mode-appropriate starting score (25k for 4p, 35k for 3p).
             self.state = Some(match *num_players {
@@ -315,7 +318,12 @@ mod tests {
             kyotaku: 0,
             oya,
             scores: vec![25_000, 25_000, 25_000, 25_000],
-            tehais: vec![one_hand.clone(), one_hand.clone(), one_hand.clone(), one_hand],
+            tehais: vec![
+                one_hand.clone(),
+                one_hand.clone(),
+                one_hand.clone(),
+                one_hand,
+            ],
             num_players: 4,
         }
     }
@@ -422,7 +430,11 @@ mod tests {
         t.handle(&start_kyoku(0)).unwrap();
 
         // Tsumogiri 1m (drew 1m, immediate cut).
-        t.handle(&AkagiEvent::Tsumo { actor: 0, pai: "1m".into() }).unwrap();
+        t.handle(&AkagiEvent::Tsumo {
+            actor: 0,
+            pai: "1m".into(),
+        })
+        .unwrap();
         t.handle(&AkagiEvent::Dahai {
             actor: 0,
             pai: "1m".into(),
@@ -431,7 +443,11 @@ mod tests {
         .unwrap();
 
         // Tedashi 1m (drew 2m, cut a 1m from hand).
-        t.handle(&AkagiEvent::Tsumo { actor: 0, pai: "2m".into() }).unwrap();
+        t.handle(&AkagiEvent::Tsumo {
+            actor: 0,
+            pai: "2m".into(),
+        })
+        .unwrap();
         t.handle(&AkagiEvent::Dahai {
             actor: 0,
             pai: "1m".into(),
@@ -440,7 +456,11 @@ mod tests {
         .unwrap();
 
         // Riichi declaration — Reach event then Dahai commits riichi.
-        t.handle(&AkagiEvent::Tsumo { actor: 0, pai: "3m".into() }).unwrap();
+        t.handle(&AkagiEvent::Tsumo {
+            actor: 0,
+            pai: "3m".into(),
+        })
+        .unwrap();
         t.handle(&AkagiEvent::Reach { actor: 0 }).unwrap();
         t.handle(&AkagiEvent::Dahai {
             actor: 0,

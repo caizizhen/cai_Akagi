@@ -55,7 +55,11 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, state: AppState) -> Result<()> {
 
 fn spawn_forwarders<R: Runtime>(app: AppHandle<R>, state: AppState) {
     forward(app.clone(), state.mjai_bus.subscribe(), "mjai-event");
-    forward(app.clone(), state.bot_response_bus.subscribe(), "bot-response");
+    forward(
+        app.clone(),
+        state.bot_response_bus.subscribe(),
+        "bot-response",
+    );
     forward(app.clone(), state.notify_bus.subscribe(), "notify");
     forward(
         app.clone(),

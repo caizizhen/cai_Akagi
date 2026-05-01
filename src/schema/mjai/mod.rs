@@ -223,7 +223,9 @@ mod tests {
         let line = r#"{"type":"start_game","names":["a","b","c","d"],"kyoku_first":0,"aka_flag":true,"id":2}"#;
         let ev: MjaiEvent = serde_json::from_str(line).unwrap();
         match ev {
-            MjaiEvent::StartGame { num_players, names, .. } => {
+            MjaiEvent::StartGame {
+                num_players, names, ..
+            } => {
                 assert_eq!(num_players, 4, "missing num_players → defaults to 4");
                 assert_eq!(names.len(), 4);
             }
@@ -233,7 +235,12 @@ mod tests {
         let line = r#"{"type":"start_kyoku","bakaze":"E","dora_marker":"2m","kyoku":1,"honba":0,"kyotaku":0,"oya":0,"scores":[25000,25000,25000,25000],"tehais":[["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"],["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"],["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"],["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"]]}"#;
         let ev: MjaiEvent = serde_json::from_str(line).unwrap();
         match ev {
-            MjaiEvent::StartKyoku { num_players, scores, tehais, .. } => {
+            MjaiEvent::StartKyoku {
+                num_players,
+                scores,
+                tehais,
+                ..
+            } => {
                 assert_eq!(num_players, 4);
                 assert_eq!(scores.len(), 4);
                 assert_eq!(tehais.len(), 4);

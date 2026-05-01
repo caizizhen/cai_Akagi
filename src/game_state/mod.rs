@@ -15,7 +15,7 @@ pub mod snapshot;
 pub mod tracker;
 
 pub use mahgen_view::{MahgenView, PlayerMahgenView};
-pub use score::{Score, calculate_score, is_tenpai, waits_for};
+pub use score::{calculate_score, is_tenpai, waits_for, Score};
 pub use snapshot::{
     DiscardEntry, GameStateSnapshot, MeldKind, MeldSnapshot, Phase, PlayerSnapshot,
 };

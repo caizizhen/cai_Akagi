@@ -12,7 +12,7 @@
 //! but possible if the user fiddled with `--user-data-dir` manually),
 //! the function returns an error and the supervisor surfaces it.
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
@@ -189,7 +189,11 @@ mod tests {
 
     #[test]
     fn resolve_explicit_absolute() {
-        let abs = if cfg!(windows) { r"C:\tmp\custom" } else { "/tmp/custom" };
+        let abs = if cfg!(windows) {
+            r"C:\tmp\custom"
+        } else {
+            "/tmp/custom"
+        };
         let p = resolve_profile_dir(abs).unwrap();
         assert_eq!(p, PathBuf::from(abs));
     }

@@ -5,7 +5,7 @@
 //! `?` is the unknown-tile placeholder used when we don't know what another
 //! seat drew/holds.
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::cmp::Ordering;
 
 /// Look up the mjai tile string for a Majsoul tile string. Returns an error
@@ -59,9 +59,9 @@ pub fn ms_to_mjai(ms: &str) -> Result<&'static str> {
 /// Unknown strings sort last (one past `?`).
 fn pai_rank(pai: &str) -> usize {
     const ORDER: [&str; 38] = [
-        "1m", "2m", "3m", "4m", "5mr", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p",
-        "5pr", "5p", "6p", "7p", "8p", "9p", "1s", "2s", "3s", "4s", "5sr", "5s", "6s", "7s",
-        "8s", "9s", "E", "S", "W", "N", "P", "F", "C", "?",
+        "1m", "2m", "3m", "4m", "5mr", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5pr",
+        "5p", "6p", "7p", "8p", "9p", "1s", "2s", "3s", "4s", "5sr", "5s", "6s", "7s", "8s", "9s",
+        "E", "S", "W", "N", "P", "F", "C", "?",
     ];
     ORDER.iter().position(|t| *t == pai).unwrap_or(ORDER.len())
 }

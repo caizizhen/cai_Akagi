@@ -32,10 +32,10 @@ use crate::bot::runtime::PythonRuntime;
 use crate::bot::sync_guard::SyncGuard;
 use crate::event_bus::{BotResponseBus, BotStatusBus, NotifyBus};
 use crate::schema::{BotStatus, LoadStage, MjaiEvent, Notification};
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use std::collections::HashSet;
 use std::sync::Arc;
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{broadcast, Mutex};
 use tracing::{debug, error, info, warn};
 
 pub struct BotManager {
@@ -101,10 +101,7 @@ impl BotManager {
     /// Caller subscribes via `mjai.subscribe()` rather than passing the
     /// `Sender` so the manager doesn't keep the channel alive itself —
     /// makes shutdown deterministic when the proxy stops producing.
-    pub async fn run(
-        mut self,
-        mut rx: broadcast::Receiver<MjaiEvent>,
-    ) -> Result<()> {
+    pub async fn run(mut self, mut rx: broadcast::Receiver<MjaiEvent>) -> Result<()> {
         info!(
             bot = %self.active_name,
             "bot manager subscribed to MJAI bus; waiting for start_game"
@@ -136,7 +133,12 @@ impl BotManager {
     /// Drive one event through the manager. Public for unit tests.
     pub async fn handle(&mut self, event: MjaiEvent) -> Result<()> {
         // Spawn the runner the moment we see the bot's seat in start_game.
-        if let MjaiEvent::StartGame { id: Some(seat), num_players, .. } = &event {
+        if let MjaiEvent::StartGame {
+            id: Some(seat),
+            num_players,
+            ..
+        } = &event
+        {
             self.actor_id = Some(*seat);
             // Pick the active bot for this game's player count.
             let chosen = if *num_players == 3 {
@@ -185,9 +187,7 @@ impl BotManager {
                     bot: bot.clone(),
                     error: err_str.clone(),
                 });
-                self.emit_notify(
-                    Notification::error("Bot reaction failed").body(err_str),
-                );
+                self.emit_notify(Notification::error("Bot reaction failed").body(err_str));
                 return Err(e).context("bot react failed");
             }
         };
@@ -356,10 +356,7 @@ impl BotManager {
         });
         // Reuse the loading id so the sticky toast is replaced, not
         // duplicated. Frontend treats same-id as a swap.
-        self.emit_notify(
-            Notification::success(format!("{bot_name} ready"))
-                .id(load_id),
-        );
+        self.emit_notify(Notification::success(format!("{bot_name} ready")).id(load_id));
         self.runner = Some(Box::new(bot));
         Ok(())
     }

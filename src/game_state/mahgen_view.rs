@@ -18,9 +18,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::snapshot::{
-    DiscardEntry, GameStateSnapshot, MeldKind, MeldSnapshot, PlayerSnapshot,
-};
+use super::snapshot::{DiscardEntry, GameStateSnapshot, MeldKind, MeldSnapshot, PlayerSnapshot};
 
 /// One player's view in the mahgen DSL.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,11 +58,7 @@ impl MahgenView {
             .map(|p| PlayerMahgenView {
                 seat: p.seat,
                 hand: encode_hand(p, snap.our_seat),
-                melds: p
-                    .melds
-                    .iter()
-                    .map(|m| encode_meld(m, p.seat, np))
-                    .collect(),
+                melds: p.melds.iter().map(|m| encode_meld(m, p.seat, np)).collect(),
                 river: encode_river(&p.river),
             })
             .collect();
@@ -443,7 +437,12 @@ fn encode_river(river: &[DiscardEntry]) -> String {
 mod tests {
     use super::*;
 
-    fn pl(seat: u8, tehai: Vec<&str>, melds: Vec<MeldSnapshot>, river: Vec<DiscardEntry>) -> PlayerSnapshot {
+    fn pl(
+        seat: u8,
+        tehai: Vec<&str>,
+        melds: Vec<MeldSnapshot>,
+        river: Vec<DiscardEntry>,
+    ) -> PlayerSnapshot {
         PlayerSnapshot {
             seat,
             tehai: tehai.iter().map(|s| (*s).to_string()).collect(),

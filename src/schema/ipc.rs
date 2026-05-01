@@ -274,10 +274,7 @@ mod tests {
             actor_id: 2,
         };
         let j = serde_json::to_string(&s).unwrap();
-        assert_eq!(
-            j,
-            r#"{"state":"ready","bot":"example","actor_id":2}"#
-        );
+        assert_eq!(j, r#"{"state":"ready","bot":"example","actor_id":2}"#);
         let back: BotStatus = serde_json::from_str(&j).unwrap();
         assert_eq!(back, s);
     }

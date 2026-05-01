@@ -10,16 +10,17 @@ use std::{
 use tracing::{Event, Subscriber};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
-    EnvFilter, Layer, Registry,
     filter::Targets,
     fmt::{
-        self, FmtContext, FormatEvent, FormatFields,
+        self,
         format::{DefaultFields, Writer},
         time::{ChronoLocal, FormatTime},
+        FmtContext, FormatEvent, FormatFields,
     },
     layer::SubscriberExt,
     registry::LookupSpan,
     util::SubscriberInitExt,
+    EnvFilter, Layer, Registry,
 };
 
 /// Compact event formatter for file outputs.

@@ -12,8 +12,8 @@
 //! straight to `Running`.
 
 use crate::capture::{
-    CaptureBackend, CaptureCtx, CaptureKind as RtCaptureKind, ShutdownToken,
-    chromium::ChromiumBackend, hudsucker_backend::HudsuckerBackend,
+    chromium::ChromiumBackend, hudsucker_backend::HudsuckerBackend, CaptureBackend, CaptureCtx,
+    CaptureKind as RtCaptureKind, ShutdownToken,
 };
 use crate::config::CaptureMode;
 use crate::ipc::state::AppState;
@@ -175,13 +175,12 @@ pub async fn spawn_capture_supervisor(state: AppState) -> Result<()> {
                 // the dashboard. Sticky id `capture-error` lets the next
                 // restart's Running emission overwrite the same toast.
                 let _ = notify_bus.send(
-                    Notification::error(format!(
-                        "{} capture stopped",
-                        kind_label(kind)
-                    ))
-                    .body(format!("{msg} — open Settings → Capture and click Restart."))
-                    .sticky()
-                    .id("capture-error"),
+                    Notification::error(format!("{} capture stopped", kind_label(kind)))
+                        .body(format!(
+                            "{msg} — open Settings → Capture and click Restart."
+                        ))
+                        .sticky()
+                        .id("capture-error"),
                 );
                 CaptureStatus::Error {
                     kind,

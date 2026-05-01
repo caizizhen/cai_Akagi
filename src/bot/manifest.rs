@@ -23,7 +23,7 @@
 //! TOML for human-edited files, JSON for the resolved file because Python's
 //! stdlib parses JSON natively but not TOML on older interpreters.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -170,10 +170,10 @@ impl Manifest {
         if !path.is_file() {
             return Ok(None);
         }
-        let body = std::fs::read_to_string(&path)
-            .with_context(|| format!("read {}", path.display()))?;
-        let manifest: Manifest = toml::from_str(&body)
-            .with_context(|| format!("parse {}", path.display()))?;
+        let body =
+            std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        let manifest: Manifest =
+            toml::from_str(&body).with_context(|| format!("parse {}", path.display()))?;
         if manifest.manifest_version != 1 {
             bail!(
                 "{} declares manifest_version={}, this Akagi build only understands 1",
@@ -209,10 +209,10 @@ pub fn load_values(
         return Ok(resolved);
     }
 
-    let body = std::fs::read_to_string(&path)
-        .with_context(|| format!("read {}", path.display()))?;
-    let on_disk: toml::Table = toml::from_str(&body)
-        .with_context(|| format!("parse {}", path.display()))?;
+    let body =
+        std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let on_disk: toml::Table =
+        toml::from_str(&body).with_context(|| format!("parse {}", path.display()))?;
 
     for (key, toml_value) in on_disk {
         let Some(spec) = manifest.settings.get(&key) else {
@@ -324,10 +324,7 @@ fn validate(key: &str, spec: &FieldSpec, value: &serde_json::Value) -> Result<()
                 bail!("setting {key:?}: enum field missing `choices` in manifest");
             };
             if !choices.iter().any(|c| c == s) {
-                bail!(
-                    "setting {key:?}: {s:?} not in choices {:?}",
-                    choices
-                );
+                bail!("setting {key:?}: {s:?} not in choices {:?}", choices);
             }
         }
     }
@@ -362,11 +359,9 @@ fn toml_to_json(v: toml::Value) -> serde_json::Value {
         // schema-extension doesn't silently lose data.
         toml::Value::Datetime(d) => J::String(d.to_string()),
         toml::Value::Array(a) => J::Array(a.into_iter().map(toml_to_json).collect()),
-        toml::Value::Table(t) => J::Object(
-            t.into_iter()
-                .map(|(k, v)| (k, toml_to_json(v)))
-                .collect(),
-        ),
+        toml::Value::Table(t) => {
+            J::Object(t.into_iter().map(|(k, v)| (k, toml_to_json(v))).collect())
+        }
     }
 }
 
@@ -385,11 +380,7 @@ fn json_to_toml(v: &serde_json::Value) -> Result<toml::Value> {
             }
         }
         J::Null => bail!("null is not a valid setting value"),
-        J::Array(a) => toml::Value::Array(
-            a.iter()
-                .map(json_to_toml)
-                .collect::<Result<Vec<_>>>()?,
-        ),
+        J::Array(a) => toml::Value::Array(a.iter().map(json_to_toml).collect::<Result<Vec<_>>>()?),
         J::Object(o) => {
             let mut t = toml::Table::new();
             for (k, v) in o {
@@ -587,8 +578,7 @@ mystery = "ignored"
         let path = write_resolved(tmp.path(), &values).unwrap();
         assert!(path.ends_with(".akagi/resolved_settings.json"));
         let body = std::fs::read_to_string(&path).unwrap();
-        let back: BTreeMap<String, serde_json::Value> =
-            serde_json::from_str(&body).unwrap();
+        let back: BTreeMap<String, serde_json::Value> = serde_json::from_str(&body).unwrap();
         assert_eq!(back["k"], json!("v"));
     }
 
@@ -612,7 +602,11 @@ mystery = "ignored"
         std::env::set_current_dir(&cwd_guard).unwrap();
 
         let path = result.unwrap();
-        assert!(path.is_absolute(), "expected absolute, got {}", path.display());
+        assert!(
+            path.is_absolute(),
+            "expected absolute, got {}",
+            path.display()
+        );
         assert!(path.ends_with(".akagi/resolved_settings.json"));
     }
 }

@@ -83,8 +83,14 @@ async fn run(
                 // Skip if our hand is in a transient state (post-call before
                 // discard, etc) — analysis_engine asserts 13 or 14 closed tiles.
                 let size = info.hand_size();
-                if size != 13 && size != 14 && size != 10 && size != 11 && size != 7 && size != 8
-                    && size != 4 && size != 5
+                if size != 13
+                    && size != 14
+                    && size != 10
+                    && size != 11
+                    && size != 7
+                    && size != 8
+                    && size != 4
+                    && size != 5
                 {
                     debug!("analysis: skipping hand_size={size}");
                     continue;
@@ -151,7 +157,12 @@ mod tests {
             kyotaku: 0,
             oya: 0,
             scores: vec![25_000, 25_000, 25_000, 25_000],
-            tehais: vec![one_hand.clone(), one_hand.clone(), one_hand.clone(), one_hand],
+            tehais: vec![
+                one_hand.clone(),
+                one_hand.clone(),
+                one_hand.clone(),
+                one_hand,
+            ],
             num_players: 4,
         }
     }
@@ -164,7 +175,12 @@ mod tests {
         let cache: AnalysisCache = Arc::new(RwLock::new(None));
 
         let _tracker = spawn_with_post(mjai.subscribe(), Some(post.clone()));
-        spawn(post.subscribe(), _tracker.clone(), bus.clone(), cache.clone());
+        spawn(
+            post.subscribe(),
+            _tracker.clone(),
+            bus.clone(),
+            cache.clone(),
+        );
 
         let mut rx = bus.subscribe();
         mjai.send(start_game()).unwrap();

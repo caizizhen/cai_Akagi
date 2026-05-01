@@ -35,9 +35,7 @@ fn one_shanten_14() -> akagi::analysis::PlayerInfo34 {
 fn report(name: &str, iters: u64, total_ns: u128) {
     let per = total_ns as f64 / iters as f64;
     let micro = per / 1000.0;
-    println!(
-        "  {name:50}  iters={iters:>8}  per_call={per:>10.0} ns  ({micro:>7.2} µs)"
-    );
+    println!("  {name:50}  iters={iters:>8}  per_call={per:>10.0} ns  ({micro:>7.2} µs)");
 }
 
 #[test]
@@ -133,8 +131,7 @@ fn improves_scan(info: &akagi::analysis::PlayerInfo34) -> u32 {
             probe[d] -= 1;
             let new_shanten = shanten::shanten_from_counts(&probe, len_div3);
             if new_shanten == cur_shanten {
-                let new_waits =
-                    waits::waits_for_counts(&probe, len_div3, &left, cur_shanten - 1);
+                let new_waits = waits::waits_for_counts(&probe, len_div3, &left, cur_shanten - 1);
                 if new_waits.total_left() > cur_waits.total_left() {
                     count += 1;
                 }
@@ -177,11 +174,17 @@ fn bench_summary_estimate() {
 
     let n_shanten = 1_000_000u64;
     for _ in 0..warmup {
-        std::hint::black_box(shanten::shanten_from_counts(&info13.hand, info13.tehai_len_div3()));
+        std::hint::black_box(shanten::shanten_from_counts(
+            &info13.hand,
+            info13.tehai_len_div3(),
+        ));
     }
     let t = Instant::now();
     for _ in 0..n_shanten {
-        std::hint::black_box(shanten::shanten_from_counts(&info13.hand, info13.tehai_len_div3()));
+        std::hint::black_box(shanten::shanten_from_counts(
+            &info13.hand,
+            info13.tehai_len_div3(),
+        ));
     }
     let shanten_ns = t.elapsed().as_nanos() as f64 / n_shanten as f64;
 
@@ -209,21 +212,47 @@ fn bench_summary_estimate() {
     std::hint::black_box(s);
 
     println!();
-    println!("  shanten primitive          : {:>10.0} ns  ({:.3} µs)", shanten_ns, shanten_ns / 1000.0);
-    println!("  analyze_13 (current)       : {:>10.0} ns  ({:.3} µs)", analyze13_ns, analyze13_ns / 1000.0);
-    println!("  improves_scan (delta cost) : {:>10.0} ns  ({:.3} µs)", improves_ns, improves_ns / 1000.0);
-    println!("  analyze_14 (current)       : {:>10.0} ns  ({:.3} µs)", analyze14_ns, analyze14_ns / 1000.0);
+    println!(
+        "  shanten primitive          : {:>10.0} ns  ({:.3} µs)",
+        shanten_ns,
+        shanten_ns / 1000.0
+    );
+    println!(
+        "  analyze_13 (current)       : {:>10.0} ns  ({:.3} µs)",
+        analyze13_ns,
+        analyze13_ns / 1000.0
+    );
+    println!(
+        "  improves_scan (delta cost) : {:>10.0} ns  ({:.3} µs)",
+        improves_ns,
+        improves_ns / 1000.0
+    );
+    println!(
+        "  analyze_14 (current)       : {:>10.0} ns  ({:.3} µs)",
+        analyze14_ns,
+        analyze14_ns / 1000.0
+    );
     println!();
     println!("  Projected with improves    :");
     let proj_13 = analyze13_ns + improves_ns;
-    println!("    analyze_13 (+improves)   : {:>10.0} ns  ({:.3} µs)", proj_13, proj_13 / 1000.0);
+    println!(
+        "    analyze_13 (+improves)   : {:>10.0} ns  ({:.3} µs)",
+        proj_13,
+        proj_13 / 1000.0
+    );
     // analyze_14 calls analyze_13 ~14 times (once per discard candidate).
     // Add improves_ns × 14 to analyze_14 as a coarse upper bound.
     let proj_14 = analyze14_ns + improves_ns * 14.0;
-    println!("    analyze_14 (+improves)   : {:>10.0} ns  ({:.3} µs)", proj_14, proj_14 / 1000.0);
+    println!(
+        "    analyze_14 (+improves)   : {:>10.0} ns  ({:.3} µs)",
+        proj_14,
+        proj_14 / 1000.0
+    );
     println!();
-    println!("  Headroom against 50 ms IPC budget per tsumo: {:.0}× margin",
-             50_000_000.0 / proj_14);
+    println!(
+        "  Headroom against 50 ms IPC budget per tsumo: {:.0}× margin",
+        50_000_000.0 / proj_14
+    );
     println!();
 
     // Avoid unused on debug builds.

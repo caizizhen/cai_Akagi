@@ -85,8 +85,7 @@ fn next_shanten_waits(
                 if nl[drawn as usize] > 0 {
                     nl[drawn as usize] -= 1;
                 }
-                let next_waits =
-                    waits::waits_for_counts(&probe, len_div3, &nl, post_shanten - 1);
+                let next_waits = waits::waits_for_counts(&probe, len_div3, &nl, post_shanten - 1);
                 let total = next_waits.total_left();
                 if total > best {
                     best = total;
@@ -167,8 +166,7 @@ fn compute_improves(
             probe[d] -= 1;
             let post_shanten = shanten::shanten_from_counts(&probe, len_div3);
             if post_shanten == cur_shanten {
-                let new_waits =
-                    waits::waits_for_counts(&probe, len_div3, &left, cur_shanten - 1);
+                let new_waits = waits::waits_for_counts(&probe, len_div3, &left, cur_shanten - 1);
                 let new_total = new_waits.total_left();
                 if new_total > waits_total {
                     improve_way_count += 1;
@@ -188,10 +186,7 @@ fn compute_improves(
 
 /// Compute the weighted-average waits count factoring improves in. Mirrors
 /// Go `result13.AvgImproveWaitsCount = improveWaitsSum / weight` at lines 403-412.
-fn avg_improve_waits(
-    left_tiles: &[u8; TILE_COUNT],
-    max_per_tile: &[u32; TILE_COUNT],
-) -> f64 {
+fn avg_improve_waits(left_tiles: &[u8; TILE_COUNT], max_per_tile: &[u32; TILE_COUNT]) -> f64 {
     let mut sum: u64 = 0;
     let mut weight: u64 = 0;
     for i in 0..TILE_COUNT {
@@ -258,8 +253,7 @@ pub fn analyze_13(info: &PlayerInfo34) -> Hand13Result {
         let dora: Vec<_> = info.dora_indicators.iter().map(|d| d.dora_next()).collect();
         is_furiten = agari_rate::is_furiten(&current_waits, &info.own_discards);
         tile_rates = agari_rate::per_wait(&current_waits, &info.own_discards, &dora, is_furiten);
-        avg_agari_rate =
-            agari_rate::average(&current_waits, &info.own_discards, &dora, is_furiten);
+        avg_agari_rate = agari_rate::average(&current_waits, &info.own_discards, &dora, is_furiten);
 
         let est = score::expectation(info, &current_waits, !is_open);
         dama_point = est.dama_point;
@@ -441,6 +435,10 @@ mod tests {
         info.own_discards.push(Tile34::from_mjai("3p").unwrap());
         let r = analyze_13(&info);
         assert_eq!(r.shanten, 1);
-        assert!((r.furiten_rate - 0.5).abs() < 1e-9, "got {}", r.furiten_rate);
+        assert!(
+            (r.furiten_rate - 0.5).abs() < 1e-9,
+            "got {}",
+            r.furiten_rate
+        );
     }
 }

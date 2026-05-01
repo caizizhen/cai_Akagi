@@ -55,9 +55,7 @@ fn meld_from_snapshot(m: &MeldSnapshot) -> Result<Meld34> {
         Meld34Kind::Chi => tiles,
         _ => {
             // Pick the first tile — they're all the same Tile34 by construction.
-            vec![*tiles
-                .first()
-                .ok_or_else(|| anyhow!("empty meld tiles"))?]
+            vec![*tiles.first().ok_or_else(|| anyhow!("empty meld tiles"))?]
         }
     };
     let called_tile = match &m.called_tile {

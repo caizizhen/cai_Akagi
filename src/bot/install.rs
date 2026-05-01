@@ -22,7 +22,7 @@ use crate::bot::registry::BotEntry;
 use crate::bot::runtime::PythonRuntime;
 use crate::event_bus::NotifyBus;
 use crate::schema::Notification;
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use globset::Glob;
 use serde::Deserialize;
 use std::path::{Component, Path, PathBuf};
@@ -51,11 +51,7 @@ impl GithubInstallSpec {
         }
         // `repo` is already validated to be `owner/name`; second segment
         // is the default install name.
-        self.repo
-            .split('/')
-            .nth(1)
-            .unwrap_or(&self.repo)
-            .to_owned()
+        self.repo.split('/').nth(1).unwrap_or(&self.repo).to_owned()
     }
 }
 
@@ -114,10 +110,7 @@ pub async fn install_from_github_release(
         .context("build http client")?;
 
     let release: ReleaseJson = client
-        .get(format!(
-            "{GITHUB_API}/repos/{}/releases/latest",
-            spec.repo
-        ))
+        .get(format!("{GITHUB_API}/repos/{}/releases/latest", spec.repo))
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
@@ -169,8 +162,7 @@ pub async fn install_from_github_release(
             .as_nanos()
     ));
     let install_result = (|| -> Result<()> {
-        std::fs::create_dir(&staging)
-            .with_context(|| format!("mkdir {}", staging.display()))?;
+        std::fs::create_dir(&staging).with_context(|| format!("mkdir {}", staging.display()))?;
         extract_zip_safe(&tempfile_path, &staging)
             .with_context(|| format!("extract {}", tempfile_path.display()))?;
 
@@ -249,9 +241,7 @@ fn validate_repo(repo: &str) -> Result<()> {
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
         {
-            bail!(
-                "repo {repo:?} has illegal characters; expected [A-Za-z0-9._-]+/[A-Za-z0-9._-]+"
-            );
+            bail!("repo {repo:?} has illegal characters; expected [A-Za-z0-9._-]+/[A-Za-z0-9._-]+");
         }
     }
     Ok(())
@@ -315,7 +305,10 @@ pub fn pick_asset<'a>(assets: &'a [Asset], glob: Option<&str>) -> Result<&'a Ass
         let matcher = Glob::new(pat)
             .with_context(|| format!("compile glob {pat:?}"))?
             .compile_matcher();
-        let matches: Vec<&Asset> = assets.iter().filter(|a| matcher.is_match(&a.name)).collect();
+        let matches: Vec<&Asset> = assets
+            .iter()
+            .filter(|a| matcher.is_match(&a.name))
+            .collect();
         match matches.len() {
             0 => bail!("no asset in release matches glob {pat:?}"),
             1 => Ok(matches[0]),
@@ -360,11 +353,7 @@ async fn download_asset(
     let mut file = tokio::fs::File::create(&path)
         .await
         .with_context(|| format!("create {}", path.display()))?;
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .context("read body chunk")?
-    {
+    while let Some(chunk) = response.chunk().await.context("read body chunk")? {
         file.write_all(&chunk)
             .await
             .with_context(|| format!("write {}", path.display()))?;
@@ -377,8 +366,8 @@ async fn download_asset(
 /// path escapes the destination root (`..`, absolute paths) — standard
 /// "zip slip" defence.
 pub fn extract_zip_safe(zip_path: &Path, dest_dir: &Path) -> Result<()> {
-    let file = std::fs::File::open(zip_path)
-        .with_context(|| format!("open {}", zip_path.display()))?;
+    let file =
+        std::fs::File::open(zip_path).with_context(|| format!("open {}", zip_path.display()))?;
     let mut archive = zip::ZipArchive::new(file)
         .with_context(|| format!("not a valid zip: {}", zip_path.display()))?;
 
@@ -422,10 +411,7 @@ pub fn extract_zip_safe(zip_path: &Path, dest_dir: &Path) -> Result<()> {
         {
             use std::os::unix::fs::PermissionsExt;
             if let Some(mode) = entry.unix_mode() {
-                let _ = std::fs::set_permissions(
-                    &out_path,
-                    std::fs::Permissions::from_mode(mode),
-                );
+                let _ = std::fs::set_permissions(&out_path, std::fs::Permissions::from_mode(mode));
             }
         }
     }
@@ -460,9 +446,7 @@ pub fn strip_single_top_level(dir: &Path) -> Result<PathBuf> {
 pub fn validate_layout(bot_root: &Path) -> Result<()> {
     let bot_py = bot_root.join("bot.py");
     if !bot_py.is_file() {
-        bail!(
-            "extracted archive does not contain bot.py at the top level — refusing install"
-        );
+        bail!("extracted archive does not contain bot.py at the top level — refusing install");
     }
     Ok(())
 }
@@ -473,8 +457,8 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use tempfile::TempDir;
-    use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
+    use zip::ZipWriter;
 
     fn asset(name: &str) -> Asset {
         Asset {
@@ -605,7 +589,10 @@ mod tests {
     fn extract_zip_safe_writes_files() {
         let tmp = TempDir::new().unwrap();
         let zip = tmp.path().join("a.zip");
-        make_zip(&zip, &[("bot.py", b"print('hi')\n"), ("README.md", b"# hi\n")]);
+        make_zip(
+            &zip,
+            &[("bot.py", b"print('hi')\n"), ("README.md", b"# hi\n")],
+        );
 
         let out = TempDir::new().unwrap();
         extract_zip_safe(&zip, out.path()).unwrap();

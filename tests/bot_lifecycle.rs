@@ -23,7 +23,7 @@ use akagi::bot::{BotManager, BotRegistry, PythonRuntime};
 use akagi::event_bus::{bot_response_bus, bot_status_bus, notify_bus};
 use akagi::schema::{BotStatus, LoadStage, MjaiEvent, NotifyLevel};
 use tempfile::TempDir;
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{broadcast, Mutex};
 
 fn fresh_syncs() -> Arc<Mutex<HashSet<String>>> {
     Arc::new(Mutex::new(HashSet::new()))

@@ -51,8 +51,8 @@ impl BotRegistry {
             return Ok(Self { root, entries });
         }
 
-        let read = std::fs::read_dir(&root)
-            .with_context(|| format!("read_dir {}", root.display()))?;
+        let read =
+            std::fs::read_dir(&root).with_context(|| format!("read_dir {}", root.display()))?;
 
         for item in read {
             let item = item.with_context(|| format!("dir entry under {}", root.display()))?;

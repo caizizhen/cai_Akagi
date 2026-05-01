@@ -5,17 +5,17 @@ use crate::{
     logger::{BinaryLogger, Session},
 };
 use hudsucker::{
-    Body, HttpContext, HttpHandler, RequestOrResponse, WebSocketContext, WebSocketHandler,
     futures::{Sink, SinkExt, Stream, StreamExt},
     hyper::{Request, Response, StatusCode, Uri},
     tokio_tungstenite::tungstenite::{self, Message},
+    Body, HttpContext, HttpHandler, RequestOrResponse, WebSocketContext, WebSocketHandler,
 };
 use std::{
     collections::HashMap,
     net::SocketAddr,
     sync::{
-        Arc, Mutex as StdMutex,
         atomic::{AtomicU64, Ordering},
+        Arc, Mutex as StdMutex,
     },
 };
 use tokio::sync::Notify;
@@ -76,7 +76,10 @@ impl ProxyHandler {
                 let file_name = format!("{flow_id:06}-{path}.log");
                 let label = format!("{} {} {}", self.platform.subdir(), client, uri);
                 let flow_log =
-                    match self.session.flow_logger(self.platform.subdir(), &file_name, label) {
+                    match self
+                        .session
+                        .flow_logger(self.platform.subdir(), &file_name, label)
+                    {
                         Ok(log) => Some(log),
                         Err(e) => {
                             warn!("failed to open flow log for {client}: {e:#}");
@@ -190,12 +193,18 @@ impl ProxyHandler {
         bridge: &SharedBridge,
     ) -> Option<Message> {
         let (tag, dir, dir_arrow, uri) = match ctx {
-            WebSocketContext::ServerToClient { src, .. } => {
-                (TAG_SERVER_TO_CLIENT, Direction::Down, '\u{2193}', src.to_string())
-            }
-            WebSocketContext::ClientToServer { dst, .. } => {
-                (TAG_CLIENT_TO_SERVER, Direction::Up, '\u{2191}', dst.to_string())
-            }
+            WebSocketContext::ServerToClient { src, .. } => (
+                TAG_SERVER_TO_CLIENT,
+                Direction::Down,
+                '\u{2193}',
+                src.to_string(),
+            ),
+            WebSocketContext::ClientToServer { dst, .. } => (
+                TAG_CLIENT_TO_SERVER,
+                Direction::Up,
+                '\u{2191}',
+                dst.to_string(),
+            ),
         };
 
         match &msg {

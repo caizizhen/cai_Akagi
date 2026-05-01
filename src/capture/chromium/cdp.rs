@@ -21,15 +21,18 @@
 //! the polling to include `browser.targets()` and filter on type.
 
 use crate::bridge::Direction;
-use crate::capture::flow::{FlowBridges, slugify};
+use crate::capture::flow::{slugify, FlowBridges};
 use crate::event_bus::MjaiBus;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use base64::Engine;
 use chromiumoxide::page::Page;
-use chromiumoxide::{Browser, cdp::browser_protocol::network::{
-    EnableParams as NetworkEnableParams, EventWebSocketClosed, EventWebSocketCreated,
-    EventWebSocketFrameReceived, EventWebSocketFrameSent,
-}};
+use chromiumoxide::{
+    cdp::browser_protocol::network::{
+        EnableParams as NetworkEnableParams, EventWebSocketClosed, EventWebSocketCreated,
+        EventWebSocketFrameReceived, EventWebSocketFrameSent,
+    },
+    Browser,
+};
 use futures_util::StreamExt;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -127,8 +130,7 @@ pub async fn run(
                 if !adds.contains(&id) {
                     continue;
                 }
-                match attach_page(page.clone(), id.clone(), bridges.clone(), mjai_bus.clone())
-                    .await
+                match attach_page(page.clone(), id.clone(), bridges.clone(), mjai_bus.clone()).await
                 {
                     Ok(handle) => {
                         info!("CDP: attached to page target {id}");

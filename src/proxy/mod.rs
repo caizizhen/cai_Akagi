@@ -10,7 +10,7 @@ use crate::{
     util::resolve_dir,
 };
 use anyhow::{Context, Result};
-use hudsucker::{Proxy, rustls};
+use hudsucker::{rustls, Proxy};
 use std::{future::Future, net::SocketAddr, str::FromStr, sync::Arc};
 use tokio::sync::Notify;
 use tracing::info;

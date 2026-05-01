@@ -14,7 +14,9 @@ use crate::bot::{BotEntry, BotRegistry};
 use crate::config::AppConfig;
 use crate::game_state::mahgen_view::MahgenView;
 use crate::game_state::snapshot::GameStateSnapshot;
-use crate::ipc::capture_supervisor::{restart_capture as restart_capture_inner, spawn_capture_supervisor};
+use crate::ipc::capture_supervisor::{
+    restart_capture as restart_capture_inner, spawn_capture_supervisor,
+};
 use crate::ipc::state::AppState;
 use crate::schema::{BotInfo, BotSettings, HoraScoreInfo, Notification, Snapshot};
 use crate::util::resolve_dir;
@@ -44,10 +46,7 @@ pub async fn get_config(state: State<'_, AppState>) -> CmdResult<AppConfig> {
 /// have to relaunch the app to switch capture modes. Bot-manager and
 /// other subsystems still require manual restart.
 #[tauri::command]
-pub async fn update_config(
-    new_config: AppConfig,
-    state: State<'_, AppState>,
-) -> CmdResult<()> {
+pub async fn update_config(new_config: AppConfig, state: State<'_, AppState>) -> CmdResult<()> {
     persist_config(&new_config, &state.config_path).map_err(|e| e.to_string())?;
 
     // Snapshot the *previous* capture-relevant fields before we overwrite,
@@ -71,8 +70,7 @@ pub async fn update_config(
             }
         });
         let _ = state.notify_bus.send(
-            Notification::info("Capture restarted")
-                .body("Applied capture/proxy config changes."),
+            Notification::info("Capture restarted").body("Applied capture/proxy config changes."),
         );
     } else {
         let _ = state.notify_bus.send(
@@ -96,10 +94,7 @@ pub async fn list_bots(state: State<'_, AppState>) -> CmdResult<Vec<BotInfo>> {
 /// frontend should hide the settings panel for manifest-less bots and
 /// avoid calling this command for them.
 #[tauri::command]
-pub async fn get_bot_settings(
-    name: String,
-    state: State<'_, AppState>,
-) -> CmdResult<BotSettings> {
+pub async fn get_bot_settings(name: String, state: State<'_, AppState>) -> CmdResult<BotSettings> {
     let dir = state.config.read().await.bot.dir.clone();
     let resolved = resolve_dir(Path::new(&dir));
     let registry = BotRegistry::scan(&resolved).map_err(|e| format!("scan bots: {e:#}"))?;
@@ -261,11 +256,7 @@ pub async fn update_bot_from_manifest(
 /// `bot-sync-<name>`. Refuses to start a second concurrent sync for the
 /// same bot.
 #[tauri::command]
-pub async fn sync_bot_deps(
-    name: String,
-    force: bool,
-    state: State<'_, AppState>,
-) -> CmdResult<()> {
+pub async fn sync_bot_deps(name: String, force: bool, state: State<'_, AppState>) -> CmdResult<()> {
     let dir = state.config.read().await.bot.dir.clone();
     let resolved = resolve_dir(Path::new(&dir));
     let registry = BotRegistry::scan(&resolved).map_err(|e| format!("scan bots: {e:#}"))?;
@@ -295,9 +286,9 @@ pub async fn sync_bot_deps(
 
     match runtime.ensure_synced(&entry.dir).await {
         Ok(()) => {
-            let _ = state.notify_bus.send(
-                Notification::success(format!("{name} environment ready")).id(notify_id),
-            );
+            let _ = state
+                .notify_bus
+                .send(Notification::success(format!("{name} environment ready")).id(notify_id));
             Ok(())
         }
         Err(e) => {
@@ -343,7 +334,8 @@ pub async fn restart_capture(state: State<'_, AppState>) -> CmdResult<()> {
 /// Probe the system for installed Chromium-family browsers. Surface in the
 /// Settings UI so the user can pick which executable to launch.
 #[tauri::command]
-pub async fn detect_system_chrome() -> CmdResult<Vec<crate::capture::chromium::detect::DetectedBrowser>> {
+pub async fn detect_system_chrome(
+) -> CmdResult<Vec<crate::capture::chromium::detect::DetectedBrowser>> {
     Ok(crate::capture::chromium::detect::detect_system_browsers())
 }
 
@@ -382,14 +374,18 @@ pub async fn remove_chrome_for_testing(
     version: String,
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
-    if version.is_empty() || version.contains('/') || version.contains('\\') || version.contains("..") {
+    if version.is_empty()
+        || version.contains('/')
+        || version.contains('\\')
+        || version.contains("..")
+    {
         return Err(format!("invalid CfT version {version:?}"));
     }
     crate::capture::chromium::cft::remove(&version)
         .map_err(|e| format!("remove Chrome for Testing: {e:#}"))?;
-    let _ = state
-        .notify_bus
-        .send(Notification::success(format!("Removed Chrome for Testing {version}")));
+    let _ = state.notify_bus.send(Notification::success(format!(
+        "Removed Chrome for Testing {version}"
+    )));
     Ok(())
 }
 
@@ -458,9 +454,7 @@ pub async fn get_analysis(state: State<'_, AppState>) -> CmdResult<Option<Analys
 /// Live game-state snapshot from the tracker. `None` before any
 /// `start_game` event has been observed.
 #[tauri::command]
-pub async fn get_game_snapshot(
-    state: State<'_, AppState>,
-) -> CmdResult<Option<GameStateSnapshot>> {
+pub async fn get_game_snapshot(state: State<'_, AppState>) -> CmdResult<Option<GameStateSnapshot>> {
     Ok(state.game_tracker.lock().await.snapshot())
 }
 

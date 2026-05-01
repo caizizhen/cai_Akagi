@@ -25,8 +25,8 @@
 //! only a `msg_id` — the matching method name and response type must be
 //! looked up from a per-flow `pending` map populated by Request packets.
 
-use anyhow::{Context, Result, bail, ensure};
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use anyhow::{bail, ensure, Context, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use prost::Message;
 use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor, SerializeOptions};
 use serde_json::Value as JsonValue;
@@ -35,9 +35,8 @@ use std::{collections::HashMap, sync::Arc, sync::LazyLock};
 const LIQI_DESC: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/liqi_desc.bin"));
 const LIQI_JSON: &str = include_str!("liqi.json");
 
-pub static POOL: LazyLock<DescriptorPool> = LazyLock::new(|| {
-    DescriptorPool::decode(LIQI_DESC).expect("failed to decode liqi_desc.bin")
-});
+pub static POOL: LazyLock<DescriptorPool> =
+    LazyLock::new(|| DescriptorPool::decode(LIQI_DESC).expect("failed to decode liqi_desc.bin"));
 
 pub static ROUTES: LazyLock<JsonValue> =
     LazyLock::new(|| serde_json::from_str(LIQI_JSON).expect("failed to parse liqi.json"));
@@ -71,7 +70,9 @@ impl LiqiParser {
         // Force-init the static descriptors so first-call latency is paid up front.
         LazyLock::force(&POOL);
         LazyLock::force(&ROUTES);
-        Self { pending: HashMap::new() }
+        Self {
+            pending: HashMap::new(),
+        }
     }
 
     pub fn parse(&mut self, buf: &[u8]) -> Result<ParsedMessage> {
@@ -105,7 +106,8 @@ impl LiqiParser {
         let method_name: Arc<str> = Arc::from(wrapper.name.as_str());
         let (req_desc, resp_desc) = lookup_method_types(&wrapper.name)?;
         let payload = decode_to_json(&req_desc, &wrapper.data)?;
-        self.pending.insert(msg_id, (method_name.clone(), resp_desc));
+        self.pending
+            .insert(msg_id, (method_name.clone(), resp_desc));
         Ok(ParsedMessage {
             msg_type: MessageType::Request,
             msg_id: Some(msg_id),
@@ -159,7 +161,10 @@ fn decode_wrapper(buf: &[u8]) -> Result<Wrapper> {
         data: ::prost::alloc::vec::Vec<u8>,
     }
     let raw = Raw::decode(buf).context("failed to decode Wrapper")?;
-    Ok(Wrapper { name: raw.name, data: raw.data })
+    Ok(Wrapper {
+        name: raw.name,
+        data: raw.data,
+    })
 }
 
 fn lookup_notify_type(name: &str) -> Result<MessageDescriptor> {
@@ -248,10 +253,7 @@ pub fn decode_action(name: &str, b64: &str) -> Result<JsonValue> {
         .with_context(|| format!("base64 decode failed for action {name}"))?;
     wtf_decode(&mut bytes);
     let parts: Vec<&str> = name.split('.').filter(|s| !s.is_empty()).collect();
-    ensure!(
-        !parts.is_empty(),
-        "empty action name"
-    );
+    ensure!(!parts.is_empty(), "empty action name");
     // Action names are typically `.lq.ActionFoo`; fall back to last segment.
     let fqn = if parts.len() == 1 {
         format!("lq.{}", parts[0])
@@ -286,8 +288,9 @@ mod tests {
 
     #[test]
     fn routes_load() {
-        assert!(ROUTES["nested"]["lq"]["nested"]["Lobby"]["methods"]["fetchConnectionInfo"]
-            .is_object());
+        assert!(
+            ROUTES["nested"]["lq"]["nested"]["Lobby"]["methods"]["fetchConnectionInfo"].is_object()
+        );
     }
 
     #[test]
