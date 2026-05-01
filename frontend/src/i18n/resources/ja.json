@@ -6,6 +6,10 @@
     "logs": "ログ",
     "settings": "設定"
   },
+  "sidebar": {
+    "collapse": "サイドバーを閉じる",
+    "expand": "サイドバーを開く"
+  },
   "tile": {
     "header": "対局",
     "player_0": "プレイヤー 1",

@@ -6,6 +6,10 @@
     "logs": "日誌",
     "settings": "設定"
   },
+  "sidebar": {
+    "collapse": "收起側欄",
+    "expand": "展開側欄"
+  },
   "tile": {
     "header": "對局",
     "player_0": "玩家 1",

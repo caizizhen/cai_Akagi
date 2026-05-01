@@ -6,6 +6,10 @@
     "logs": "Logs",
     "settings": "Settings"
   },
+  "sidebar": {
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar"
+  },
   "tile": {
     "header": "Game",
     "player_0": "Player 1",

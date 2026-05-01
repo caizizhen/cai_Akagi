@@ -21,8 +21,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { invoke } from '@/lib/tauri'
+import { useSidebar } from '@/hooks/useSidebar'
 import { useCaptureStore } from '@/stores/captureStore'
 import { useConfigStore } from '@/stores/configStore'
+import {
+  SCALE_DEFAULT,
+  SCALE_MAX,
+  SCALE_MIN,
+  SCALE_STEP,
+  useUiPrefsStore,
+} from '@/stores/uiPrefsStore'
 import type { AppConfig, CaptureMode, DetectedBrowser } from '@/types'
 
 export function Settings() {
@@ -140,6 +148,8 @@ export function Settings() {
               </SelectContent>
             </Select>
           </Field>
+          <UiScaleField />
+          <SidebarHoverField />
         </CardContent>
       </Card>
 
@@ -256,6 +266,67 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
     <div className="flex items-center justify-between">
       <Label>{label}</Label>
       <Switch checked={value} onCheckedChange={onChange} />
+    </div>
+  )
+}
+
+function SidebarHoverField() {
+  const isHoverOpen = useSidebar((s) => s.settings.isHoverOpen)
+  const disabled = useSidebar((s) => s.settings.disabled)
+  const setSettings = useSidebar((s) => s.setSettings)
+  return (
+    <div className="grid gap-1.5">
+      <Toggle
+        label="Sidebar peek on hover"
+        value={isHoverOpen}
+        onChange={(v) => setSettings({ isHoverOpen: v })}
+      />
+      <Toggle
+        label="Hide sidebar"
+        value={disabled}
+        onChange={(v) => setSettings({ disabled: v })}
+      />
+      <span className="text-xs text-muted-foreground">
+        When the sidebar is collapsed, peek-on-hover expands it temporarily without pinning it open.
+      </span>
+    </div>
+  )
+}
+
+function UiScaleField() {
+  const scale = useUiPrefsStore((s) => s.scale)
+  const setScale = useUiPrefsStore((s) => s.setScale)
+  const resetScale = useUiPrefsStore((s) => s.resetScale)
+  const pct = Math.round(scale * 100)
+  return (
+    <div className="grid gap-1.5">
+      <div className="flex items-center justify-between">
+        <Label>UI Scale</Label>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-sm tabular-nums w-12 text-right">{pct}%</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={resetScale}
+            disabled={scale === SCALE_DEFAULT}
+          >
+            Reset
+          </Button>
+        </div>
+      </div>
+      <input
+        type="range"
+        min={SCALE_MIN}
+        max={SCALE_MAX}
+        step={SCALE_STEP}
+        value={scale}
+        onChange={(e) => setScale(parseFloat(e.target.value))}
+        className="w-full accent-primary"
+        aria-label="UI Scale"
+      />
+      <span className="text-xs text-muted-foreground">
+        Scales typography, spacing, and controls across the app. Saved locally.
+      </span>
     </div>
   )
 }
