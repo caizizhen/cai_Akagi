@@ -487,6 +487,11 @@ mod tests {
         Arc::new(Mutex::new(HashSet::new()))
     }
 
+    // Test-only helper; the 5-tuple return groups the manager with the
+    // listener handles its consumers need. Splitting it into a dedicated
+    // struct just for clippy would obscure the test setup, so allow the
+    // complexity here.
+    #[allow(clippy::type_complexity)]
     fn manager_with_mock(
         replies: Vec<BotResponse>,
     ) -> (

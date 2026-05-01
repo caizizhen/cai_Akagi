@@ -41,6 +41,13 @@ use tracing::{info, warn};
 /// Engine state, varying by player count. Both variants accept the same
 /// `riichienv_core::replay::MjaiEvent` produced by `convert::to_riichienv`,
 /// so the dispatch surface is just `match self.state`.
+///
+/// Variants differ in size (~1744 vs ~1400 bytes); boxing the larger
+/// variant would shave ~300 bytes off the enum but force every match
+/// arm + helper API to deref through `Box`. There is at most one
+/// `TrackedGame` per `GameTracker` and one `GameTracker` per process,
+/// so the saving is not worth the call-site churn.
+#[allow(clippy::large_enum_variant)]
 pub enum TrackedGame {
     Four(GameState),
     Three(GameState3P),
@@ -88,13 +95,13 @@ impl GameTracker {
             // Fresh game → fresh state. Constructor seeds round 0 with the
             // mode-appropriate starting score (25k for 4p, 35k for 3p).
             self.state = Some(match *num_players {
-                3 => TrackedGame::Three(GameState3P::new(0, true, None, 0, self.rule.clone())),
-                4 => TrackedGame::Four(GameState::new(0, true, None, 0, self.rule.clone())),
+                3 => TrackedGame::Three(GameState3P::new(0, true, None, 0, self.rule)),
+                4 => TrackedGame::Four(GameState::new(0, true, None, 0, self.rule)),
                 other => {
                     warn!(
                         "tracker: unexpected num_players={other} on start_game; defaulting to 4p"
                     );
-                    TrackedGame::Four(GameState::new(0, true, None, 0, self.rule.clone()))
+                    TrackedGame::Four(GameState::new(0, true, None, 0, self.rule))
                 }
             });
             // Each new game may put us in a different seat (or none, in

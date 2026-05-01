@@ -95,8 +95,7 @@ fn write_default_config(path: &Path) -> std::io::Result<()> {
         }
     }
     let defaults = AppConfig::default();
-    let body = toml::to_string_pretty(&defaults)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let body = toml::to_string_pretty(&defaults).map_err(std::io::Error::other)?;
     std::fs::write(path, body)
 }
 

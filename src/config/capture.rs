@@ -95,7 +95,7 @@ mod tests {
         let back: CaptureConfig = toml::from_str(&s).unwrap();
         assert_eq!(back.mode, CaptureMode::Chromium);
         assert_eq!(back.chromium.executable, "/opt/chrome/chrome");
-        assert_eq!(back.chromium.force_cft, true);
+        assert!(back.chromium.force_cft);
         assert_eq!(back.chromium.extra_args, vec!["--lang=ja"]);
     }
 

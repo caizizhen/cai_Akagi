@@ -154,7 +154,7 @@ fn bench_improves_scan() {
         sink = sink.wrapping_add(improves_scan(&info) as u64);
     }
     let dt = t0.elapsed().as_nanos();
-    println!("  (sink={})", sink);
+    println!("  (sink={sink})");
     report("improves_scan (added cost per analyze_13)", iters, dt);
 }
 

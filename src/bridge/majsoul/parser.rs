@@ -171,8 +171,7 @@ fn lookup_notify_type(name: &str) -> Result<MessageDescriptor> {
     let parts: Vec<&str> = name.split('.').filter(|s| !s.is_empty()).collect();
     ensure!(
         parts.len() == 2,
-        "expected 2-part notify name (lq.X), got {:?}",
-        name
+        "expected 2-part notify name (lq.X), got {name:?}"
     );
     let fqn = format!("{}.{}", parts[0], parts[1]);
     POOL.get_message_by_name(&fqn)
@@ -183,8 +182,7 @@ fn lookup_method_types(name: &str) -> Result<(MessageDescriptor, MessageDescript
     let parts: Vec<&str> = name.split('.').filter(|s| !s.is_empty()).collect();
     ensure!(
         parts.len() == 3,
-        "expected 3-part method name (lq.Service.method), got {:?}",
-        name
+        "expected 3-part method name (lq.Service.method), got {name:?}"
     );
     let entry = &ROUTES["nested"][parts[0]]["nested"][parts[1]]["methods"][parts[2]];
     let req_name = entry["requestType"]

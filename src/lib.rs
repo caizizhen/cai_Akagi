@@ -138,7 +138,7 @@ pub fn run() {
                     runtime.clone(),
                 );
 
-                ipc::install(&app.handle(), state.clone())?;
+                ipc::install(app.handle(), state.clone())?;
 
                 // Spawn tracker + analysis loops inside the Tauri Tokio
                 // runtime — `lib::run` itself is sync.

@@ -49,7 +49,7 @@ where
         let meta = event.metadata();
         write!(writer, " {:>5} {}", meta.level(), meta.target())?;
         if let (Some(file), Some(line)) = (meta.file(), meta.line()) {
-            write!(writer, " {}:{}", file, line)?;
+            write!(writer, " {file}:{line}")?;
         }
         write!(writer, ": ")?;
         ctx.field_format().format_fields(writer.by_ref(), event)?;

@@ -91,6 +91,11 @@ where
     pub fn len(&self) -> usize {
         self.map.lock().unwrap().len()
     }
+
+    #[cfg(test)]
+    pub fn is_empty(&self) -> bool {
+        self.map.lock().unwrap().is_empty()
+    }
 }
 
 /// Sanitize a free-form label into a filename-safe slug. Anything outside

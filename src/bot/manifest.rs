@@ -324,7 +324,7 @@ fn validate(key: &str, spec: &FieldSpec, value: &serde_json::Value) -> Result<()
                 bail!("setting {key:?}: enum field missing `choices` in manifest");
             };
             if !choices.iter().any(|c| c == s) {
-                bail!("setting {key:?}: {s:?} not in choices {:?}", choices);
+                bail!("setting {key:?}: {s:?} not in choices {choices:?}");
             }
         }
     }
