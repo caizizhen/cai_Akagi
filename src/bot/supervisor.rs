@@ -11,6 +11,7 @@ use crate::bot::runtime::PythonRuntime;
 use crate::bot::BotManager;
 use crate::config::BotConfig;
 use crate::event_bus::{BotResponseBus, BotStatusBus, MjaiBus, NotifyBus};
+use crate::inspector::InspectorWriter;
 use crate::util;
 use anyhow::{anyhow, Result};
 use std::collections::HashSet;
@@ -30,6 +31,7 @@ pub async fn run_bot_manager(
     response_bus: BotResponseBus,
     status_bus: BotStatusBus,
     notify_bus: NotifyBus,
+    inspector: InspectorWriter,
     runtime: Option<PythonRuntime>,
     syncs_in_flight: Arc<Mutex<HashSet<String>>>,
 ) -> Result<()> {
@@ -58,6 +60,7 @@ pub async fn run_bot_manager(
         response_bus,
         status_bus,
         notify_bus,
+        inspector,
         syncs_in_flight,
     );
     let rx = mjai.subscribe();

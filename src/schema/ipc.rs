@@ -187,6 +187,7 @@ pub struct HoraScoreInfo {
 // names.
 
 use crate::config::AppConfig;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// One discovered bot, IPC-shaped (separate from `bot::BotEntry` so the
@@ -222,6 +223,104 @@ pub struct Snapshot {
     pub bot_status: BotStatus,
     pub capture_status: CaptureStatus,
     pub log_dir: PathBuf,
+}
+
+// ---------- Logs ----------
+//
+// One canonical shape for an emitted tracing event: written to disk as a
+// line of `all.jsonl` AND broadcast to the frontend log viewer over a
+// `tauri::ipc::Channel`. Keeping disk and wire shapes identical means the
+// initial-load reader and the live-tail subscriber feed the same UI rows
+// without a translation step.
+
+/// One log event. `ts_ms` is millisecond Unix time (local clock at emit).
+/// `fields` carries the structured fields recorded via `tracing` (the
+/// canonical `message` is hoisted to its own slot).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LogEntry {
+    pub ts_ms: i64,
+    pub level: String,
+    pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub fields: HashMap<String, serde_json::Value>,
+}
+
+/// Metadata for one log session directory under `<log_root>/`. Sorted
+/// newest-first by `name` (timestamp). `is_active` marks the session
+/// owned by the running process — the UI uses this to enable live tail.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogSessionInfo {
+    pub name: String,
+    pub path: PathBuf,
+    pub size_bytes: u64,
+    pub mtime_ms: i64,
+    pub is_active: bool,
+}
+
+/// Filtered, paginated read against a single session's `all.jsonl`.
+/// `limit` is capped server-side at 2000 to bound payload size.
+/// `levels`/`targets`/`search` are AND-ed; within each, multiple entries
+/// are OR-ed (level in set; any target prefix matches; substring on
+/// `message` is case-insensitive).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ReadLogRequest {
+    pub session: String,
+    #[serde(default)]
+    pub offset: usize,
+    #[serde(default)]
+    pub limit: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub levels: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub targets: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadLogResponse {
+    pub entries: Vec<LogEntry>,
+    pub has_more: bool,
+    pub skipped_malformed: u32,
+}
+
+// ---------- Inspector ----------
+//
+// Mirrors the on-disk `<session>/inspector.jsonl` shape for past-session
+// reads. Same `kind` filtering / pagination model as `ReadLogRequest`.
+
+/// Filtered, paginated read against a session's `inspector.jsonl`.
+/// `kinds` accepts `"ws_frame"`, `"mjai_event"`, `"bot_reaction"`.
+/// `actor` filters records that reference an actor (mjai events with an
+/// `actor` field; bot reactions by `actor_id`); ws frames are
+/// always included regardless of actor unless `kinds` excludes them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ReadInspectorRequest {
+    pub session: String,
+    #[serde(default)]
+    pub offset: usize,
+    #[serde(default)]
+    pub limit: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kinds: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<u8>,
+    /// Case-insensitive substring on the entry's text representation
+    /// (frame raw text, mjai event JSON, bot action JSON).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadInspectorResponse {
+    pub entries: Vec<crate::schema::InspectorEntry>,
+    pub has_more: bool,
+    pub skipped_malformed: u32,
 }
 
 #[cfg(test)]
@@ -331,5 +430,45 @@ mod tests {
         let s = CaptureStatus::Stopped;
         let j = serde_json::to_string(&s).unwrap();
         assert_eq!(j, r#"{"state":"stopped"}"#);
+    }
+
+    #[test]
+    fn log_entry_round_trips_minimal() {
+        // Minimal entry with no file/line/fields — empty fields map and
+        // missing optional file/line should not appear in the JSON.
+        let e = LogEntry {
+            ts_ms: 1_700_000_000_000,
+            level: "INFO".into(),
+            target: "akagi::lib".into(),
+            file: None,
+            line: None,
+            message: "hello".into(),
+            fields: HashMap::new(),
+        };
+        let j = serde_json::to_string(&e).unwrap();
+        assert!(!j.contains("file"), "got: {j}");
+        assert!(!j.contains("line"), "got: {j}");
+        assert!(!j.contains("fields"), "got: {j}");
+        let back: LogEntry = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, e);
+    }
+
+    #[test]
+    fn log_entry_round_trips_full() {
+        let mut fields = HashMap::new();
+        fields.insert("seat".into(), serde_json::Value::Number(2.into()));
+        fields.insert("kind".into(), serde_json::Value::String("ron".into()));
+        let e = LogEntry {
+            ts_ms: 1_700_000_000_000,
+            level: "WARN".into(),
+            target: "akagi::proxy::handler".into(),
+            file: Some("src/proxy/handler.rs".into()),
+            line: Some(42),
+            message: "stalled".into(),
+            fields,
+        };
+        let j = serde_json::to_string(&e).unwrap();
+        let back: LogEntry = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, e);
     }
 }

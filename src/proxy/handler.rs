@@ -2,8 +2,12 @@ use crate::{
     bridge::{self, Bridge, Direction},
     config::Platform,
     event_bus::MjaiBus,
+    inspector::InspectorWriter,
     logger::{BinaryLogger, Session},
+    schema::{FrameDirection, FrameRaw, InspectorEntry},
 };
+use base64::Engine as _;
+use chrono::Local;
 use hudsucker::{
     futures::{Sink, SinkExt, Stream, StreamExt},
     hyper::{Request, Response, StatusCode, Uri},
@@ -31,6 +35,10 @@ const TAG_SERVER_TO_CLIENT: u8 = 1;
 /// matching Response travels server→client.
 type SharedBridge = Arc<StdMutex<Box<dyn Bridge>>>;
 
+/// Per-flow inspector identity. The map is keyed on the same
+/// `SocketAddr` the bridges map uses, so they line up.
+type FlowInspectorIds = Arc<StdMutex<HashMap<SocketAddr, String>>>;
+
 #[derive(Clone)]
 pub struct ProxyHandler {
     session: Arc<Session>,
@@ -41,6 +49,13 @@ pub struct ProxyHandler {
     /// Optional fan-out for parsed mjai events. `None` keeps the proxy
     /// usable in tests and in standalone "log only" mode.
     mjai_tx: Option<MjaiBus>,
+    /// Inspector writer. Cloned from `session.inspector()` at construction.
+    /// Cheap to clone (Arc inside).
+    inspector: InspectorWriter,
+    /// Stable inspector flow id per client SocketAddr. Lets the inspector
+    /// timeline group frames by flow even though the underlying bridge
+    /// already lives at the SocketAddr key.
+    inspector_flow_ids: FlowInspectorIds,
     /// Triggered by `stop_capture` to kick all in-flight WS flows. Without
     /// this, hudsucker's `with_graceful_shutdown` only blocks new
     /// connections; existing ones would drain naturally and the game
@@ -56,6 +71,7 @@ impl ProxyHandler {
         force_close: Arc<Notify>,
     ) -> anyhow::Result<Self> {
         let binary = session.binary_logger("proxy")?;
+        let inspector = session.inspector();
         Ok(Self {
             session,
             binary,
@@ -63,8 +79,27 @@ impl ProxyHandler {
             bridges: Arc::new(StdMutex::new(HashMap::new())),
             next_flow_id: Arc::new(AtomicU64::new(1)),
             mjai_tx,
+            inspector,
+            inspector_flow_ids: Arc::new(StdMutex::new(HashMap::new())),
             force_close,
         })
+    }
+
+    /// Stable inspector flow id for `client`. Computed once on first
+    /// frame from the per-platform subdir + the same `next_flow_id`
+    /// counter the bridge map uses, so two flows from the same socket
+    /// share the same id.
+    fn inspector_flow_id(&self, client: SocketAddr) -> String {
+        let mut map = self
+            .inspector_flow_ids
+            .lock()
+            .expect("inspector_flow_ids mutex poisoned");
+        map.entry(client)
+            .or_insert_with(|| {
+                let n = self.next_flow_id.load(Ordering::Relaxed).saturating_sub(1);
+                format!("{}:{:06}", self.platform.subdir(), n)
+            })
+            .clone()
     }
 
     fn acquire_bridge(&self, client: SocketAddr, uri: &Uri) -> SharedBridge {
@@ -192,6 +227,7 @@ impl ProxyHandler {
         msg: Message,
         bridge: &SharedBridge,
     ) -> Option<Message> {
+        let client = client_addr(ctx);
         let (tag, dir, dir_arrow, uri) = match ctx {
             WebSocketContext::ServerToClient { src, .. } => (
                 TAG_SERVER_TO_CLIENT,
@@ -211,22 +247,23 @@ impl ProxyHandler {
             Message::Binary(buf) => {
                 debug!("{dir_arrow} {uri} binary len={}", buf.len());
                 self.binary.write(tag, buf);
-                let events = {
+                let result = {
                     let mut b = bridge.lock().expect("bridge mutex poisoned");
                     b.parse(dir, buf)
                 };
-                if !events.is_empty() {
-                    debug!("{dir_arrow} {uri} bridge emitted {} event(s)", events.len());
-                    if let Some(tx) = &self.mjai_tx {
-                        for ev in events {
-                            // No subscribers is fine — broadcast just drops.
-                            let _ = tx.send(ev);
-                        }
-                    }
-                }
+                self.record_frame(client, dir, FrameRaw::Binary(b64(buf)), buf.len(), &result);
+                self.dispatch_events(dir_arrow, &uri, result.events);
             }
             Message::Text(t) => {
                 debug!("{dir_arrow} {uri} text len={}", t.len());
+                let buf = t.as_bytes();
+                self.binary.write(tag, buf);
+                let result = {
+                    let mut b = bridge.lock().expect("bridge mutex poisoned");
+                    b.parse(dir, buf)
+                };
+                self.record_frame(client, dir, FrameRaw::Text(t.to_string()), buf.len(), &result);
+                self.dispatch_events(dir_arrow, &uri, result.events);
             }
             Message::Close(_) => debug!("{dir_arrow} {uri} close"),
             _ => {}
@@ -238,6 +275,46 @@ impl ProxyHandler {
 
         Some(msg)
     }
+
+    fn dispatch_events(&self, dir_arrow: char, uri: &str, events: Vec<crate::schema::MjaiEvent>) {
+        if events.is_empty() {
+            return;
+        }
+        debug!("{dir_arrow} {uri} bridge emitted {} event(s)", events.len());
+        if let Some(tx) = &self.mjai_tx {
+            for ev in events {
+                // No subscribers is fine — broadcast just drops.
+                let _ = tx.send(ev);
+            }
+        }
+    }
+
+    fn record_frame(
+        &self,
+        client: SocketAddr,
+        dir: Direction,
+        raw: FrameRaw,
+        size: usize,
+        result: &bridge::ParseResult,
+    ) {
+        let direction = match dir {
+            Direction::Down => FrameDirection::Down,
+            Direction::Up => FrameDirection::Up,
+        };
+        self.inspector.record(InspectorEntry::WsFrame {
+            ts_ms: Local::now().timestamp_millis(),
+            direction,
+            flow_id: self.inspector_flow_id(client),
+            size,
+            raw,
+            parsed: result.parsed.clone(),
+            emitted: result.events.len(),
+        });
+    }
+}
+
+fn b64(buf: &[u8]) -> String {
+    base64::engine::general_purpose::STANDARD.encode(buf)
 }
 
 fn client_addr(ctx: &WebSocketContext) -> SocketAddr {

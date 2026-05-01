@@ -66,10 +66,16 @@ export type DetectedBrowser = {
   path: string
 }
 
+/// Bridge selector (the runtime kind, not the history-record tag — those
+/// share names but the schema enum carries extra archive-only variants).
+/// Mirrors `src/config/platform.rs::Platform` (`#[derive(Serialize)]` →
+/// PascalCase JSON: `"Majsoul"`, `"Tenhou"`).
+export type PlatformKind = 'Majsoul' | 'Tenhou'
+
 export type AppConfig = {
   general: { language: string; first_run_completed: boolean }
   logging: { dir: string; level: string; all_level: string }
-  platform: { kind: 'Majsoul' }
+  platform: { kind: PlatformKind }
   proxy: { enabled: boolean; addr: string; ca_dir: string }
   bot: { enabled: boolean; active_4p: string; active_3p: string; auto_sync: boolean; dir: string }
   capture: CaptureConfig
@@ -334,3 +340,123 @@ export type HistoryFilter = {
 export type HistoryEvent =
   | { kind: 'recorded'; record: GameRecord }
   | { kind: 'deleted'; id: string }
+
+// ---------- Logs ----------
+//
+// Mirrors `crate::schema::ipc::{LogEntry, LogSessionInfo, ReadLogRequest,
+// ReadLogResponse}`. The same shape is used both for entries read off
+// disk (`read_log_session`) and for live-tailed entries delivered over a
+// `tauri::ipc::Channel` (`subscribe_log_events`) — initial-load and live
+// arrivals merge into the same UI list without translation.
+
+export type LogLevel = 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
+
+export type LogEntry = {
+  ts_ms: number
+  /** One of `LogLevel`, but kept open as `string` because backend may add levels. */
+  level: string
+  target: string
+  file?: string
+  line?: number
+  message: string
+  fields?: Record<string, unknown>
+}
+
+export type LogSessionInfo = {
+  name: string
+  path: string
+  size_bytes: number
+  mtime_ms: number
+  is_active: boolean
+}
+
+export type ReadLogRequest = {
+  session: string
+  offset?: number
+  limit?: number
+  levels?: string[]
+  /** Target prefixes; any-match (OR). */
+  targets?: string[]
+  /** Case-insensitive substring on `message`. */
+  search?: string
+}
+
+export type ReadLogResponse = {
+  entries: LogEntry[]
+  has_more: boolean
+  skipped_malformed: number
+}
+
+// ---------- Inspector ----------
+//
+// Mirrors `crate::schema::inspector::*` and `crate::schema::ipc::ReadInspector*`.
+// Tagged on `kind` — switch on the discriminant to render kind-specific
+// detail panels. Same shape arrives via `subscribe_inspector` (live tail)
+// and `read_inspector` (past sessions), so renderers don't fork.
+
+export type FrameDirection = 'up' | 'down'
+
+export type FrameRaw =
+  | { format: 'text'; data: string }
+  | { format: 'binary'; data: string } // base64
+
+export type ParsedFrame = {
+  method: string
+  args: unknown
+}
+
+export type BotReactionPayload = {
+  bot: string
+  actor_id: number
+  trigger: MjaiEvent
+  action: MjaiEvent
+  meta?: Record<string, unknown>
+  reaction_ms: number
+}
+
+export type InspectorEntry =
+  | {
+      kind: 'ws_frame'
+      ts_ms: number
+      direction: FrameDirection
+      flow_id: string
+      size: number
+      raw: FrameRaw
+      parsed?: ParsedFrame
+      emitted: number
+    }
+  | {
+      kind: 'mjai_event'
+      ts_ms: number
+      event: MjaiEvent
+    }
+  | {
+      kind: 'bot_reaction'
+      ts_ms: number
+      // Backend serializes BotReaction with #[serde(flatten)], so its
+      // fields land at the top level of the row alongside `kind` and
+      // `ts_ms`.
+      bot: string
+      actor_id: number
+      trigger: MjaiEvent
+      action: MjaiEvent
+      meta?: Record<string, unknown>
+      reaction_ms: number
+    }
+
+export type InspectorKind = InspectorEntry['kind']
+
+export type ReadInspectorRequest = {
+  session: string
+  offset?: number
+  limit?: number
+  kinds?: InspectorKind[]
+  actor?: number
+  search?: string
+}
+
+export type ReadInspectorResponse = {
+  entries: InspectorEntry[]
+  has_more: boolean
+  skipped_malformed: number
+}

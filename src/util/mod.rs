@@ -46,7 +46,7 @@ fn resolve_dir_inner(configured: &Path, appimage: bool, user_root: Option<PathBu
 
     let exe_candidate = std::env::current_exe()
         .ok()
-        .and_then(|exe| exe.parent().map(|p| p.join(configured)));
+        .and_then(|exe| exe.parent().map(|p| p.join(strip_leading_dot(configured))));
 
     if let Some(p) = &exe_candidate {
         if p.exists() {
@@ -107,5 +107,16 @@ mod tests {
             Some(user_root.clone()),
         );
         assert!(!resolved.starts_with(&user_root));
+    }
+
+    #[test]
+    fn relative_dot_path_does_not_leak_into_absolute() {
+        // Regression: `./logs` joined with absolute exe-parent used to keep
+        // the literal `./` component, producing paths like
+        // `/home/.../akagi/./logs/...` that surfaced in the UI as broken.
+        let resolved = resolve_dir_inner(Path::new("./logs"), false, None);
+        let s = resolved.to_string_lossy();
+        assert!(!s.contains("/./"), "got: {s}");
+        assert!(!s.contains("\\.\\"), "got: {s}");
     }
 }

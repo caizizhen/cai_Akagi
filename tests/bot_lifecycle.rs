@@ -21,12 +21,19 @@ use std::time::Duration;
 
 use akagi::bot::{BotManager, BotRegistry, PythonRuntime};
 use akagi::event_bus::{bot_response_bus, bot_status_bus, notify_bus};
+use akagi::inspector::InspectorWriter;
 use akagi::schema::{BotStatus, LoadStage, MjaiEvent, NotifyLevel};
 use tempfile::TempDir;
 use tokio::sync::{broadcast, Mutex};
 
 fn fresh_syncs() -> Arc<Mutex<HashSet<String>>> {
     Arc::new(Mutex::new(HashSet::new()))
+}
+
+fn dummy_inspector() -> InspectorWriter {
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    let path = tmp.into_temp_path().keep().unwrap();
+    InspectorWriter::open(&path, 8).unwrap().0
 }
 
 fn bin(name: &str) -> Option<PathBuf> {
@@ -105,6 +112,7 @@ async fn loading_emits_syncing_then_spawning_then_ready() {
         response_bus,
         status_bus,
         notify,
+        dummy_inspector(),
         fresh_syncs(),
     );
 
@@ -197,6 +205,7 @@ async fn second_spawn_skips_uv_sync_via_stamp() {
             response_bus,
             status_bus,
             notify,
+            dummy_inspector(),
             fresh_syncs(),
         );
         tokio::time::timeout(
@@ -228,6 +237,7 @@ async fn second_spawn_skips_uv_sync_via_stamp() {
         response_bus,
         status_bus,
         notify,
+        dummy_inspector(),
         fresh_syncs(),
     );
 

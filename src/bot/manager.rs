@@ -31,10 +31,15 @@ use crate::bot::runner::{BotRunner, SubprocessBot};
 use crate::bot::runtime::PythonRuntime;
 use crate::bot::sync_guard::SyncGuard;
 use crate::event_bus::{BotResponseBus, BotStatusBus, NotifyBus};
-use crate::schema::{BotStatus, LoadStage, MjaiEvent, Notification};
+use crate::inspector::InspectorWriter;
+use crate::schema::{
+    BotReaction, BotStatus, InspectorEntry, LoadStage, MjaiEvent, Notification,
+};
 use anyhow::{bail, Context, Result};
+use chrono::Local;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::{broadcast, Mutex};
 use tracing::{debug, error, info, warn};
 
@@ -56,6 +61,10 @@ pub struct BotManager {
     out_tx: BotResponseBus,
     status_tx: BotStatusBus,
     notify_tx: NotifyBus,
+    /// Inspector writer — one BotReaction record per `react()` call, so
+    /// the Logs → Inspector tab can replay "trigger event → bot action"
+    /// pairings without grepping multiple files.
+    inspector: InspectorWriter,
     /// Shared with the IPC layer so a user-triggered Reinstall environment
     /// and an in-flight game-start sync can't run `uv sync` against the same
     /// venv simultaneously.
@@ -72,6 +81,7 @@ impl BotManager {
         out_tx: BotResponseBus,
         status_tx: BotStatusBus,
         notify_tx: NotifyBus,
+        inspector: InspectorWriter,
         syncs_in_flight: Arc<Mutex<HashSet<String>>>,
     ) -> Self {
         let active_name = active_4p.clone();
@@ -87,6 +97,7 @@ impl BotManager {
             out_tx,
             status_tx,
             notify_tx,
+            inspector,
             syncs_in_flight,
         }
     }
@@ -178,6 +189,7 @@ impl BotManager {
             .as_mut()
             .expect("runner is Some — checked above");
         let batch = std::mem::take(&mut self.pending);
+        let started = Instant::now();
         let resp = match runner.react(&batch).await {
             Ok(r) => r,
             Err(e) => {
@@ -191,7 +203,29 @@ impl BotManager {
                 return Err(e).context("bot react failed");
             }
         };
-        debug!(action = ?resp.action, meta = ?resp.meta, "bot reacted");
+        let reaction_ms = started.elapsed().as_millis() as u64;
+        debug!(action = ?resp.action, meta = ?resp.meta, reaction_ms, "bot reacted");
+        // Inspector record: pair the trigger event (the last item in the
+        // batch is the one that crossed the decision-point threshold)
+        // with the bot's response, plus reaction latency. `MjaiEvent::None`
+        // is still recorded so the timeline shows "the bot saw this and
+        // chose not to act" — that's exactly the kind of edge case the
+        // inspector exists for.
+        if let Some(actor_id) = self.actor_id {
+            if let Some(trigger) = batch.last().cloned() {
+                self.inspector.record(InspectorEntry::BotReaction {
+                    ts_ms: Local::now().timestamp_millis(),
+                    reaction: BotReaction {
+                        bot: self.active_name.clone(),
+                        actor_id,
+                        trigger,
+                        action: resp.action.clone(),
+                        meta: resp.meta.clone(),
+                        reaction_ms,
+                    },
+                });
+            }
+        }
         // MjaiEvent::None still goes on the bus — downstream consumers
         // decide whether to render. Centralizes the "skip" decision.
         let _ = self.out_tx.send(resp);
@@ -487,6 +521,15 @@ mod tests {
         Arc::new(Mutex::new(HashSet::new()))
     }
 
+    /// Tempfile-backed inspector writer for tests. The file is leaked
+    /// for the test duration (the OS reaps it on process exit) — keeps
+    /// the constructor a one-liner without per-test cleanup boilerplate.
+    fn dummy_inspector() -> InspectorWriter {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path = tmp.into_temp_path().keep().unwrap();
+        InspectorWriter::open(&path, 8).unwrap().0
+    }
+
     // Test-only helper; the 5-tuple return groups the manager with the
     // listener handles its consumers need. Splitting it into a dedicated
     // struct just for clippy would obscure the test setup, so allow the
@@ -516,6 +559,7 @@ mod tests {
             bus,
             status,
             notify,
+            dummy_inspector(),
             fresh_syncs(),
         );
         // Pre-seat the actor and inject the mock so we don't go through
@@ -717,6 +761,7 @@ mod tests {
             bus,
             status,
             notify,
+            dummy_inspector(),
             fresh_syncs(),
         );
         mgr.actor_id = Some(2);
@@ -757,6 +802,7 @@ mod tests {
             bus,
             status,
             notify,
+            dummy_inspector(),
             fresh_syncs(),
         );
 
@@ -796,6 +842,7 @@ mod tests {
             bus,
             status,
             notify,
+            dummy_inspector(),
             fresh_syncs(),
         );
         // Should not panic / error even with no runner.
@@ -821,6 +868,7 @@ mod tests {
             bot_bus,
             status,
             notify,
+            dummy_inspector(),
             fresh_syncs(),
         );
         mgr.actor_id = Some(2);

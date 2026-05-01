@@ -7,6 +7,7 @@ pub mod config;
 pub mod event_bus;
 pub mod game_state;
 pub mod history;
+pub mod inspector;
 pub mod ipc;
 pub mod logger;
 pub mod platform;
@@ -147,6 +148,9 @@ pub fn run() {
                     ),
                 }
 
+                let history_platform =
+                    history::recorder::shared_platform(schema::Platform::from(cfg.platform.kind));
+
                 let state = ipc::AppState::new(
                     cfg,
                     config_path,
@@ -161,6 +165,7 @@ pub fn run() {
                     game_tracker,
                     analysis_cache,
                     history_store.clone(),
+                    history_platform.clone(),
                     runtime.clone(),
                 );
 
@@ -181,13 +186,14 @@ pub fn run() {
                 ));
 
                 // History recorder. Subscribes to the shared MjaiBus and
-                // finalises one GameRecord per `EndGame`. v3 only has a
-                // Majsoul bridge so the platform tag is hardcoded; once
-                // additional bridges land, fan out per-bridge.
+                // finalises one GameRecord per `EndGame`. The platform tag
+                // is taken from the active bridge selection at startup;
+                // changing platform at runtime requires a relaunch for the
+                // history records to pick up the new tag.
                 tauri::async_runtime::spawn(history::recorder::drive_loop(
                     history_store_for_recorder,
                     history_bus_for_recorder,
-                    schema::Platform::Majsoul,
+                    history_platform.clone(),
                     history_rx,
                 ));
 
@@ -196,17 +202,54 @@ pub fn run() {
                     let resp = bot_response_bus.clone();
                     let bs = bot_status_bus.clone();
                     let nb = notify_bus.clone();
+                    let inspector = state.log_session.inspector();
                     let rt = runtime.clone();
                     let syncs = state.syncs_in_flight.clone();
                     state
                         .bot_manager_started
                         .store(true, std::sync::atomic::Ordering::SeqCst);
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) =
-                            bot::run_bot_manager(bot_cfg, mjai_for_bot, resp, bs, nb, rt, syncs)
-                                .await
+                        if let Err(e) = bot::run_bot_manager(
+                            bot_cfg,
+                            mjai_for_bot,
+                            resp,
+                            bs,
+                            nb,
+                            inspector,
+                            rt,
+                            syncs,
+                        )
+                        .await
                         {
                             error!("Bot manager failed: {e:#}");
+                        }
+                    });
+                }
+
+                // Inspector mjai-bus subscriber: every event the bridges
+                // emit is mirrored into the inspector timeline so the
+                // user sees frames → mjai events → bot reactions in one
+                // place. Spawned here (vs. inside Session::init) because
+                // we need the Tauri Tokio runtime — Session is built sync.
+                {
+                    let mut rx = mjai_bus.subscribe();
+                    let inspector = state.log_session.inspector();
+                    tauri::async_runtime::spawn(async move {
+                        loop {
+                            match rx.recv().await {
+                                Ok(event) => {
+                                    inspector.record(crate::schema::InspectorEntry::MjaiEvent {
+                                        ts_ms: chrono::Local::now().timestamp_millis(),
+                                        event,
+                                    });
+                                }
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                                    // Lossy — the inspector file already
+                                    // tells the durable story; the
+                                    // real-time view tolerates gaps.
+                                }
+                                Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                            }
                         }
                     });
                 }

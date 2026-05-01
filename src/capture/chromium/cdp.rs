@@ -23,8 +23,11 @@
 use crate::bridge::Direction;
 use crate::capture::flow::{slugify, FlowBridges};
 use crate::event_bus::MjaiBus;
+use crate::inspector::InspectorWriter;
+use crate::schema::{FrameDirection, FrameRaw, InspectorEntry};
 use anyhow::{anyhow, Context, Result};
 use base64::Engine;
+use chrono::Local;
 use chromiumoxide::page::Page;
 use chromiumoxide::{
     cdp::browser_protocol::network::{
@@ -58,6 +61,40 @@ fn decode_payload(b64: &str) -> Option<Vec<u8>> {
         .ok()
 }
 
+/// Outcome of decoding a `Network.webSocketFrame*` payload into raw bytes
+/// for the bridge.
+///
+/// CDP's `WebSocketFrame.payloadData` is shaped by the WS opcode (RFC 6455):
+///
+/// - opcode `1` (text): the field is a **plain UTF-8 string**. Tenhou
+///   uses this — frames look like `{"tag":"INIT",…}` and the heartbeat
+///   `<Z/>`. We pass the bytes straight through; the bridge re-parses them.
+/// - opcode `2` (binary): the field is a **base64-encoded string**.
+///   Majsoul uses this (length-prefixed protobuf).
+/// - everything else (`0` continuation, `8` close, `9` ping, `10` pong):
+///   carries no game data — drop.
+///
+/// Splitting this out so the dispatch is unit-testable: prior to this
+/// fix the inline branches only handled opcode 2, which silently dropped
+/// every Tenhou frame on the chromium backend.
+#[derive(Debug, PartialEq, Eq)]
+enum FrameDecode {
+    Bytes(Vec<u8>),
+    Skip,
+    BadBase64,
+}
+
+fn decode_frame_payload(opcode: i64, payload_data: &str) -> FrameDecode {
+    match opcode {
+        1 => FrameDecode::Bytes(payload_data.as_bytes().to_vec()),
+        2 => match decode_payload(payload_data) {
+            Some(b) => FrameDecode::Bytes(b),
+            None => FrameDecode::BadBase64,
+        },
+        _ => FrameDecode::Skip,
+    }
+}
+
 /// Compute the symmetric difference between the previous and current
 /// page snapshots. Returns `(adds, removes)` — target ids to subscribe
 /// and target ids whose subscription tasks should be reaped. Pure so
@@ -69,11 +106,13 @@ pub fn diff_pages(prev: &HashSet<String>, current: &HashSet<String>) -> (Vec<Str
 }
 
 /// Run the CDP loop until the browser disconnects or an unrecoverable
-/// error occurs. Frames flow through `bridges` into `mjai_bus`.
+/// error occurs. Frames flow through `bridges` into `mjai_bus`, and each
+/// frame is also recorded into `inspector` for the Logs → Inspector tab.
 pub async fn run(
     endpoint: &str,
     bridges: Arc<FlowBridges<FlowKey>>,
     mjai_bus: MjaiBus,
+    inspector: InspectorWriter,
 ) -> Result<()> {
     info!("CDP connecting to {endpoint}");
     let (browser_owned, mut handler) = Browser::connect(endpoint)
@@ -130,7 +169,14 @@ pub async fn run(
                 if !adds.contains(&id) {
                     continue;
                 }
-                match attach_page(page.clone(), id.clone(), bridges.clone(), mjai_bus.clone()).await
+                match attach_page(
+                    page.clone(),
+                    id.clone(),
+                    bridges.clone(),
+                    mjai_bus.clone(),
+                    inspector.clone(),
+                )
+                .await
                 {
                     Ok(handle) => {
                         info!("CDP: attached to page target {id}");
@@ -169,6 +215,7 @@ async fn attach_page(
     target_id: String,
     bridges: Arc<FlowBridges<FlowKey>>,
     mjai_bus: MjaiBus,
+    inspector: InspectorWriter,
 ) -> Result<JoinHandle<()>> {
     page.execute(NetworkEnableParams::default())
         .await
@@ -204,44 +251,68 @@ async fn attach_page(
                     debug!("ws created: {} (target {target_id} request {})", ev.url, ev.request_id.inner());
                 }
                 Some(ev) = on_recv.next() => {
-                    if (ev.response.opcode as i64) != 2 {
-                        continue;
-                    }
-                    let Some(payload) = decode_payload(&ev.response.payload_data) else {
-                        warn!("base64 decode failed for inbound WS frame");
-                        continue;
+                    let opcode = ev.response.opcode as i64;
+                    let payload = match decode_frame_payload(opcode, &ev.response.payload_data) {
+                        FrameDecode::Bytes(b) => b,
+                        FrameDecode::BadBase64 => {
+                            warn!("base64 decode failed for inbound WS frame");
+                            continue;
+                        }
+                        FrameDecode::Skip => continue,
                     };
                     let key = FlowKey {
                         target: target_id.clone(),
                         request: ev.request_id.inner().clone(),
                     };
+                    let flow_id = format_flow_id(&key);
                     let bridge = bridges.acquire(key, "ws", "ws frame");
-                    let events = {
+                    let result = {
                         let mut b = bridge.lock().expect("bridge mutex poisoned");
                         b.parse(Direction::Down, &payload)
                     };
-                    for e in events {
+                    record_frame(
+                        &inspector,
+                        FrameDirection::Down,
+                        flow_id,
+                        opcode,
+                        &payload,
+                        &ev.response.payload_data,
+                        &result,
+                    );
+                    for e in result.events {
                         let _ = mjai_bus.send(e);
                     }
                 }
                 Some(ev) = on_sent.next() => {
-                    if (ev.response.opcode as i64) != 2 {
-                        continue;
-                    }
-                    let Some(payload) = decode_payload(&ev.response.payload_data) else {
-                        warn!("base64 decode failed for outbound WS frame");
-                        continue;
+                    let opcode = ev.response.opcode as i64;
+                    let payload = match decode_frame_payload(opcode, &ev.response.payload_data) {
+                        FrameDecode::Bytes(b) => b,
+                        FrameDecode::BadBase64 => {
+                            warn!("base64 decode failed for outbound WS frame");
+                            continue;
+                        }
+                        FrameDecode::Skip => continue,
                     };
                     let key = FlowKey {
                         target: target_id.clone(),
                         request: ev.request_id.inner().clone(),
                     };
+                    let flow_id = format_flow_id(&key);
                     let bridge = bridges.acquire(key, "ws", "ws frame");
-                    let events = {
+                    let result = {
                         let mut b = bridge.lock().expect("bridge mutex poisoned");
                         b.parse(Direction::Up, &payload)
                     };
-                    for e in events {
+                    record_frame(
+                        &inspector,
+                        FrameDirection::Up,
+                        flow_id,
+                        opcode,
+                        &payload,
+                        &ev.response.payload_data,
+                        &result,
+                    );
+                    for e in result.events {
                         let _ = mjai_bus.send(e);
                     }
                 }
@@ -262,6 +333,47 @@ async fn attach_page(
         }
     });
     Ok(handle)
+}
+
+/// Build a stable flow id for the inspector. Uses just the request id
+/// (truncated, since CDP request ids are opaque hashes ~10 chars) for
+/// brevity — the timeline already implicitly groups by flow because
+/// frames from one connection arrive interleaved.
+fn format_flow_id(key: &FlowKey) -> String {
+    let req = &key.request;
+    let trim = if req.len() > 10 { &req[..10] } else { req };
+    format!("ws:{trim}")
+}
+
+/// Record one inspector `WsFrame` entry for a parsed frame. For text
+/// frames (`opcode == 1`) `payload_data` is the original UTF-8 string —
+/// we use it verbatim so the JSONL stays human-readable. For binary
+/// frames (`opcode == 2`) we re-emit the original base64 (`payload_data`)
+/// rather than re-encoding `payload`, which is identical content but
+/// avoids a copy.
+fn record_frame(
+    inspector: &InspectorWriter,
+    direction: FrameDirection,
+    flow_id: String,
+    opcode: i64,
+    payload: &[u8],
+    payload_data: &str,
+    result: &crate::bridge::ParseResult,
+) {
+    let raw = if opcode == 1 {
+        FrameRaw::Text(payload_data.to_string())
+    } else {
+        FrameRaw::Binary(payload_data.to_string())
+    };
+    inspector.record(InspectorEntry::WsFrame {
+        ts_ms: Local::now().timestamp_millis(),
+        direction,
+        flow_id,
+        size: payload.len(),
+        raw,
+        parsed: result.parsed.clone(),
+        emitted: result.events.len(),
+    });
 }
 
 #[cfg(test)]
@@ -309,5 +421,51 @@ mod tests {
         adds.sort();
         assert_eq!(adds, vec!["a", "b"]);
         assert!(removes.is_empty());
+    }
+
+    /// Regression: prior code dropped every non-binary frame, which
+    /// silently broke Tenhou capture (Tenhou uses opcode 1 / text).
+    #[test]
+    fn text_frame_passes_through_as_utf8_bytes() {
+        let payload = r#"{"tag":"INIT","seed":"1,0,0,2,5,134"}"#;
+        assert_eq!(
+            decode_frame_payload(1, payload),
+            FrameDecode::Bytes(payload.as_bytes().to_vec())
+        );
+    }
+
+    #[test]
+    fn text_heartbeat_passes_through() {
+        // Tenhou's `<Z/>` heartbeat is a 4-byte text frame.
+        assert_eq!(
+            decode_frame_payload(1, "<Z/>"),
+            FrameDecode::Bytes(b"<Z/>".to_vec())
+        );
+    }
+
+    #[test]
+    fn binary_frame_base64_decodes() {
+        let raw = b"\x00\x01\x02hello";
+        let b64 = base64::engine::general_purpose::STANDARD.encode(raw);
+        assert_eq!(decode_frame_payload(2, &b64), FrameDecode::Bytes(raw.to_vec()));
+    }
+
+    #[test]
+    fn binary_frame_bad_base64_signals_decode_error() {
+        // Distinguished from `Skip` so the inline branch can WARN —
+        // legit malformed CDP from Chrome shouldn't be confused with
+        // an intentionally-ignored control frame.
+        assert_eq!(decode_frame_payload(2, "not base64!@#"), FrameDecode::BadBase64);
+    }
+
+    #[test]
+    fn control_and_continuation_frames_are_skipped() {
+        for opcode in [0i64, 8, 9, 10] {
+            assert_eq!(
+                decode_frame_payload(opcode, "irrelevant"),
+                FrameDecode::Skip,
+                "opcode {opcode} should skip"
+            );
+        }
     }
 }

@@ -20,7 +20,8 @@ use crate::ipc::capture_supervisor::{
 use crate::ipc::state::AppState;
 use crate::schema::{
     BotInfo, BotSettings, GameRecord, HistoryEvent, HistoryEventLog, HistoryFilter, HoraScoreInfo,
-    Notification, Snapshot,
+    InspectorEntry, LogEntry, LogSessionInfo, Notification, ReadInspectorRequest,
+    ReadInspectorResponse, ReadLogRequest, ReadLogResponse, Snapshot,
 };
 use crate::util::resolve_dir;
 use std::collections::BTreeMap;
@@ -70,17 +71,31 @@ pub async fn update_config(new_config: AppConfig, state: State<'_, AppState>) ->
 
     // Snapshot the *previous* capture-relevant fields before we overwrite,
     // so we can decide whether the supervisor needs a swap.
-    let (prev_capture, prev_proxy) = {
+    let (prev_capture, prev_proxy, prev_platform) = {
         let cfg = state.config.read().await;
-        (cfg.capture.clone(), cfg.proxy.clone())
+        (cfg.capture.clone(), cfg.proxy.clone(), cfg.platform.kind)
     };
     let capture_changed = prev_capture != new_config.capture;
     let proxy_changed = prev_proxy != new_config.proxy;
+    let platform_changed = prev_platform != new_config.platform.kind;
+    let new_platform = new_config.platform.kind;
     let bot_cfg = new_config.bot.clone();
     let bot_now_enabled = new_config.bot.enabled;
     *state.config.write().await = new_config;
 
-    if capture_changed || proxy_changed {
+    // Sync the history recorder's platform tag immediately. Subsequent
+    // finalised games are stamped with the new tag; the in-flight buffer
+    // (if any) keeps the tag it had at start_game — acceptable, since
+    // mid-game platform switches are not a real workflow.
+    if platform_changed {
+        *state
+            .history_platform
+            .write()
+            .expect("history platform lock poisoned") =
+            crate::schema::Platform::from(new_platform);
+    }
+
+    if capture_changed || proxy_changed || platform_changed {
         // Run the restart in the background — `update_config` returns
         // promptly so the UI doesn't hang on slow shutdowns.
         let st = (*state).clone();
@@ -90,9 +105,14 @@ pub async fn update_config(new_config: AppConfig, state: State<'_, AppState>) ->
                 tracing::error!("auto-restart capture failed: {e:#}");
             }
         });
-        let _ = state.notify_bus.send(
-            Notification::info("Capture restarted").body("Applied capture/proxy config changes."),
-        );
+        let body = if platform_changed {
+            "Applied platform / capture / proxy config changes."
+        } else {
+            "Applied capture / proxy config changes."
+        };
+        let _ = state
+            .notify_bus
+            .send(Notification::info("Capture restarted").body(body));
     } else {
         let _ = state.notify_bus.send(
             Notification::success("Config saved")
@@ -109,12 +129,13 @@ pub async fn update_config(new_config: AppConfig, state: State<'_, AppState>) ->
         let resp = state.bot_response_bus.clone();
         let bs = state.bot_status_bus.clone();
         let nb = state.notify_bus.clone();
+        let inspector = state.log_session.inspector();
         let rt = state.runtime.clone();
         let syncs = state.syncs_in_flight.clone();
         let started_flag = state.bot_manager_started.clone();
         tauri::async_runtime::spawn(async move {
             if let Err(e) =
-                crate::bot::run_bot_manager(bot_cfg, mjai, resp, bs, nb, rt, syncs).await
+                crate::bot::run_bot_manager(bot_cfg, mjai, resp, bs, nb, inspector, rt, syncs).await
             {
                 tracing::error!("Bot manager failed: {e:#}");
                 // Setup failure: clear the flag so a follow-up
@@ -490,6 +511,459 @@ pub async fn get_log_dir(state: State<'_, AppState>) -> CmdResult<PathBuf> {
     Ok(state.log_session.dir().to_path_buf())
 }
 
+/// Best-effort "open this folder in the OS file manager". Spawns the
+/// platform-native opener and returns immediately — we don't wait on the
+/// child, so a missing tool surfaces only if `spawn` itself fails. The
+/// frontend already wraps this in try/catch.
+#[tauri::command]
+pub async fn open_log_folder(
+    session: Option<String>,
+    state: State<'_, AppState>,
+) -> CmdResult<()> {
+    let target = match session {
+        Some(name) if !name.is_empty() => {
+            // Defense-in-depth: only allow the canonical session name
+            // shape — no `..`, no separators — so a malicious frontend
+            // can't redirect this to anywhere else on disk.
+            if !is_session_name(&name) {
+                return Err(format!("invalid session name {name:?}"));
+            }
+            state.log_session.root().join(name)
+        }
+        _ => state.log_session.dir().to_path_buf(),
+    };
+    open_path(&target)
+}
+
+fn open_path(path: &Path) -> CmdResult<()> {
+    #[cfg(target_os = "linux")]
+    let cmd = "xdg-open";
+    #[cfg(target_os = "macos")]
+    let cmd = "open";
+    #[cfg(target_os = "windows")]
+    let cmd = "explorer";
+
+    std::process::Command::new(cmd)
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("open path {}: {e}", path.display()))
+}
+
+/// Strict matcher for session directory names — `YYYYMMDD-HHMMSS`. Used
+/// both to filter `list_log_sessions` output and to validate user-
+/// supplied session names before they touch the filesystem.
+fn is_session_name(name: &str) -> bool {
+    if name.len() != 15 {
+        return false;
+    }
+    let bytes = name.as_bytes();
+    bytes
+        .iter()
+        .enumerate()
+        .all(|(i, &b)| if i == 8 { b == b'-' } else { b.is_ascii_digit() })
+}
+
+/// List every session directory under the active log root. Newest first.
+/// `is_active` marks the session this process is currently writing — the
+/// UI uses it to enable live tail.
+#[tauri::command]
+pub async fn list_log_sessions(state: State<'_, AppState>) -> CmdResult<Vec<LogSessionInfo>> {
+    let active_name = state
+        .log_session
+        .dir()
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+    let root = state.log_session.root().to_path_buf();
+
+    tokio::task::spawn_blocking(move || -> Result<Vec<LogSessionInfo>, String> {
+        let mut out = Vec::new();
+        let rd = match std::fs::read_dir(&root) {
+            Ok(rd) => rd,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(out),
+            Err(e) => return Err(format!("read_dir {}: {e}", root.display())),
+        };
+        for entry in rd.flatten() {
+            let Ok(ft) = entry.file_type() else { continue };
+            if !ft.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !is_session_name(&name) {
+                continue;
+            }
+            let path = entry.path();
+            // Cheap directory size: sum file sizes in the immediate dir.
+            // Sub-directories (per-platform flow logs) are NOT walked —
+            // for the UI it's enough to be a rough indicator, and a
+            // recursive walk on a session with thousands of game files
+            // would block the picker.
+            let mut size_bytes: u64 = 0;
+            if let Ok(rd2) = std::fs::read_dir(&path) {
+                for f in rd2.flatten() {
+                    if let Ok(m) = f.metadata() {
+                        if m.is_file() {
+                            size_bytes += m.len();
+                        }
+                    }
+                }
+            }
+            let mtime_ms = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            let is_active = name == active_name;
+            out.push(LogSessionInfo {
+                name,
+                path,
+                size_bytes,
+                mtime_ms,
+                is_active,
+            });
+        }
+        out.sort_by(|a, b| b.name.cmp(&a.name));
+        Ok(out)
+    })
+    .await
+    .map_err(|e| format!("list_log_sessions join: {e}"))?
+}
+
+/// Read filtered, paginated entries from one session's `all.jsonl`.
+///
+/// Filtering is server-side so a frontend opening a 100k-line session can
+/// still ask "just the errors" without dragging the whole file across the
+/// wire. The reader is line-oriented — one bad line is counted under
+/// `skipped_malformed` and skipped, so a partial trailing line in the
+/// active session (still being written) doesn't poison the response.
+/// `limit` is capped at 2000 to bound payload size.
+#[tauri::command]
+pub async fn read_log_session(
+    req: ReadLogRequest,
+    state: State<'_, AppState>,
+) -> CmdResult<ReadLogResponse> {
+    if !is_session_name(&req.session) {
+        return Err(format!("invalid session name {:?}", req.session));
+    }
+    let root = state.log_session.root().to_path_buf();
+
+    tokio::task::spawn_blocking(move || -> Result<ReadLogResponse, String> {
+        let path = root.join(&req.session).join("all.jsonl");
+        let file = match std::fs::File::open(&path) {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(ReadLogResponse {
+                    entries: Vec::new(),
+                    has_more: false,
+                    skipped_malformed: 0,
+                });
+            }
+            Err(e) => return Err(format!("open {}: {e}", path.display())),
+        };
+        let reader = std::io::BufReader::new(file);
+        use std::io::BufRead;
+
+        let level_set: Option<std::collections::HashSet<String>> =
+            req.levels.as_ref().map(|v| v.iter().cloned().collect());
+        let target_filters: Vec<String> = req.targets.unwrap_or_default();
+        let search_lc = req.search.as_deref().map(|s| s.to_lowercase());
+        // 0 → use a sane default (1000); otherwise hard-cap at 2000.
+        let limit = if req.limit == 0 { 1000 } else { req.limit.min(2000) };
+
+        let mut skipped_malformed: u32 = 0;
+        let mut total_match: usize = 0;
+        let mut entries: Vec<LogEntry> = Vec::with_capacity(limit);
+
+        for line in reader.lines() {
+            let line = match line {
+                Ok(l) => l,
+                Err(_) => break,
+            };
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let entry: LogEntry = match serde_json::from_str(trimmed) {
+                Ok(e) => e,
+                Err(_) => {
+                    skipped_malformed += 1;
+                    continue;
+                }
+            };
+            if let Some(ref ls) = level_set {
+                if !ls.contains(&entry.level) {
+                    continue;
+                }
+            }
+            if !target_filters.is_empty()
+                && !target_filters.iter().any(|t| entry.target.starts_with(t))
+            {
+                continue;
+            }
+            if let Some(ref s) = search_lc {
+                if !entry.message.to_lowercase().contains(s) {
+                    continue;
+                }
+            }
+            total_match += 1;
+            if total_match > req.offset && entries.len() < limit {
+                entries.push(entry);
+            }
+        }
+
+        let has_more = total_match > req.offset + entries.len();
+        Ok(ReadLogResponse {
+            entries,
+            has_more,
+            skipped_malformed,
+        })
+    })
+    .await
+    .map_err(|e| format!("read_log_session join: {e}"))?
+}
+
+/// Read filtered, paginated entries from a session's `inspector.jsonl`.
+/// Same line-oriented, fault-tolerant reader as `read_log_session` —
+/// malformed lines bumped under `skipped_malformed`, `limit` capped at
+/// 2000. Filtering is server-side so a session with hundreds of
+/// thousands of events doesn't have to cross the wire to be narrowed.
+#[tauri::command]
+pub async fn read_inspector(
+    req: ReadInspectorRequest,
+    state: State<'_, AppState>,
+) -> CmdResult<ReadInspectorResponse> {
+    if !is_session_name(&req.session) {
+        return Err(format!("invalid session name {:?}", req.session));
+    }
+    let root = state.log_session.root().to_path_buf();
+
+    tokio::task::spawn_blocking(move || -> Result<ReadInspectorResponse, String> {
+        let path = root.join(&req.session).join("inspector.jsonl");
+        let file = match std::fs::File::open(&path) {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(ReadInspectorResponse {
+                    entries: Vec::new(),
+                    has_more: false,
+                    skipped_malformed: 0,
+                });
+            }
+            Err(e) => return Err(format!("open {}: {e}", path.display())),
+        };
+        let reader = std::io::BufReader::new(file);
+        use std::io::BufRead;
+
+        let kind_set: Option<std::collections::HashSet<String>> =
+            req.kinds.as_ref().map(|v| v.iter().cloned().collect());
+        let actor = req.actor;
+        let search_lc = req.search.as_deref().map(|s| s.to_lowercase());
+        let limit = if req.limit == 0 { 1000 } else { req.limit.min(2000) };
+
+        let mut skipped_malformed: u32 = 0;
+        let mut total_match: usize = 0;
+        let mut entries: Vec<InspectorEntry> = Vec::with_capacity(limit);
+
+        for line in reader.lines() {
+            let line = match line {
+                Ok(l) => l,
+                Err(_) => break,
+            };
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let entry: InspectorEntry = match serde_json::from_str(trimmed) {
+                Ok(e) => e,
+                Err(_) => {
+                    skipped_malformed += 1;
+                    continue;
+                }
+            };
+            if !inspector_matches(&entry, kind_set.as_ref(), actor, search_lc.as_deref()) {
+                continue;
+            }
+            total_match += 1;
+            if total_match > req.offset && entries.len() < limit {
+                entries.push(entry);
+            }
+        }
+
+        let has_more = total_match > req.offset + entries.len();
+        Ok(ReadInspectorResponse {
+            entries,
+            has_more,
+            skipped_malformed,
+        })
+    })
+    .await
+    .map_err(|e| format!("read_inspector join: {e}"))?
+}
+
+/// Predicate factored out of `read_inspector` so the filtering rules are
+/// in one place (and easy to test, when we add tests for the inspector
+/// pipeline). `kind_set` matches against the `kind` discriminant; `actor`
+/// matches mjai events with an `actor` field and bot reactions by
+/// `actor_id`; ws frames are unaffected by the actor filter (they're
+/// pre-bridge, no actor concept yet) — they only drop out via `kinds`.
+fn inspector_matches(
+    entry: &InspectorEntry,
+    kind_set: Option<&std::collections::HashSet<String>>,
+    actor: Option<u8>,
+    search_lc: Option<&str>,
+) -> bool {
+    let kind = match entry {
+        InspectorEntry::WsFrame { .. } => "ws_frame",
+        InspectorEntry::MjaiEvent { .. } => "mjai_event",
+        InspectorEntry::BotReaction { .. } => "bot_reaction",
+    };
+    if let Some(ks) = kind_set {
+        if !ks.contains(kind) {
+            return false;
+        }
+    }
+    if let Some(a) = actor {
+        match entry {
+            InspectorEntry::WsFrame { .. } => {} // pre-bridge, no actor
+            InspectorEntry::MjaiEvent { event, .. } => {
+                if let Some(ev_actor) = mjai_event_actor(event) {
+                    if ev_actor != a {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            }
+            InspectorEntry::BotReaction { reaction, .. } => {
+                if reaction.actor_id != a {
+                    return false;
+                }
+            }
+        }
+    }
+    if let Some(s) = search_lc {
+        let hay = match entry {
+            InspectorEntry::WsFrame { raw, parsed, .. } => {
+                let mut buf = match raw {
+                    crate::schema::FrameRaw::Text(t) => t.to_lowercase(),
+                    crate::schema::FrameRaw::Binary(b) => b.to_lowercase(),
+                };
+                if let Some(p) = parsed {
+                    buf.push(' ');
+                    buf.push_str(&p.method.to_lowercase());
+                    buf.push(' ');
+                    buf.push_str(&p.args.to_string().to_lowercase());
+                }
+                buf
+            }
+            InspectorEntry::MjaiEvent { event, .. } => serde_json::to_string(event)
+                .unwrap_or_default()
+                .to_lowercase(),
+            InspectorEntry::BotReaction { reaction, .. } => serde_json::to_string(reaction)
+                .unwrap_or_default()
+                .to_lowercase(),
+        };
+        if !hay.contains(s) {
+            return false;
+        }
+    }
+    true
+}
+
+fn mjai_event_actor(event: &crate::schema::MjaiEvent) -> Option<u8> {
+    use crate::schema::MjaiEvent as E;
+    match event {
+        E::Tsumo { actor, .. }
+        | E::Dahai { actor, .. }
+        | E::Chi { actor, .. }
+        | E::Pon { actor, .. }
+        | E::Daiminkan { actor, .. }
+        | E::Kakan { actor, .. }
+        | E::Ankan { actor, .. }
+        | E::Reach { actor }
+        | E::ReachAccepted { actor }
+        | E::Hora { actor, .. }
+        | E::Kita { actor, .. } => Some(*actor),
+        _ => None,
+    }
+}
+
+/// Subscribe to live inspector events. Same shape and lossy semantics as
+/// `subscribe_log_events`. The Logs → Inspector tab uses this for the
+/// active session's live tail.
+#[tauri::command]
+pub async fn subscribe_inspector(
+    state: State<'_, AppState>,
+    on_event: tauri::ipc::Channel<InspectorEntry>,
+) -> CmdResult<()> {
+    let mut rx = state.log_session.subscribe_inspector();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(entry) => {
+                    let _ = on_event.send(entry);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    // Inject a synthetic mjai-event-shaped warn marker so
+                    // the UI sees the gap. We piggyback on MjaiEvent::None
+                    // — the inspector tab knows to render dropped-event
+                    // markers when it sees `none` interleaved.
+                    let warn = InspectorEntry::MjaiEvent {
+                        ts_ms: chrono::Local::now().timestamp_millis(),
+                        event: crate::schema::MjaiEvent::None,
+                    };
+                    let _ = on_event.send(warn);
+                    tracing::warn!(
+                        target: "akagi.inspector",
+                        "inspector forwarder dropped {n} entries"
+                    );
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+            }
+        }
+    });
+    Ok(())
+}
+
+/// Subscribe to live log events. Each event the active session emits is
+/// forwarded over the supplied `tauri::ipc::Channel`. Slow consumers
+/// surface a synthetic `WARN akagi.logger "dropped N events…"` so the
+/// UI can show the gap explicitly. The forwarder task lives until the
+/// broadcast is closed (process shutdown).
+#[tauri::command]
+pub async fn subscribe_log_events(
+    state: State<'_, AppState>,
+    on_event: tauri::ipc::Channel<LogEntry>,
+) -> CmdResult<()> {
+    let mut rx = state.log_session.subscribe();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(entry) => {
+                    let _ = on_event.send(entry);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    let warn = LogEntry {
+                        ts_ms: chrono::Local::now().timestamp_millis(),
+                        level: "WARN".into(),
+                        target: "akagi.logger".into(),
+                        file: None,
+                        line: None,
+                        message: format!("dropped {n} log events (consumer too slow)"),
+                        fields: std::collections::HashMap::new(),
+                    };
+                    let _ = on_event.send(warn);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+            }
+        }
+    });
+    Ok(())
+}
+
 /// Latest analysis output. `None` until the analysis runner has produced
 /// at least one result for the current game.
 #[tauri::command]
@@ -689,6 +1163,12 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::remove_chrome_for_testing,
             $crate::ipc::commands::get_status,
             $crate::ipc::commands::get_log_dir,
+            $crate::ipc::commands::open_log_folder,
+            $crate::ipc::commands::list_log_sessions,
+            $crate::ipc::commands::read_log_session,
+            $crate::ipc::commands::subscribe_log_events,
+            $crate::ipc::commands::read_inspector,
+            $crate::ipc::commands::subscribe_inspector,
             $crate::ipc::commands::get_analysis,
             $crate::ipc::commands::get_game_snapshot,
             $crate::ipc::commands::get_mahgen_view,

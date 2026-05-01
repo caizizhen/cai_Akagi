@@ -16,11 +16,12 @@ import { invoke } from '@/lib/tauri'
 import { useTauriBridge } from '@/hooks/useTauriBridge'
 import { useConfigStore } from '@/stores/configStore'
 import { ManifestField } from '@/components/ManifestField'
-import type { AppConfig, BotInfo, BotSettings, DetectedBrowser } from '@/types'
+import { PLATFORMS, platformInfo } from '@/lib/platforms'
+import type { AppConfig, BotInfo, BotSettings, DetectedBrowser, PlatformKind } from '@/types'
 
-type Step = 'welcome' | 'mode' | 'config' | 'bots' | 'configure' | 'finish'
+type Step = 'welcome' | 'platform' | 'mode' | 'config' | 'bots' | 'configure' | 'finish'
 
-const STEPS: Step[] = ['welcome', 'mode', 'config', 'bots', 'configure', 'finish']
+const STEPS: Step[] = ['welcome', 'platform', 'mode', 'config', 'bots', 'configure', 'finish']
 
 // Author-provided MJAI bots installed by the first-run wizard. Same
 // install path as the manual Bots → Install From GitHub flow, just
@@ -158,6 +159,7 @@ export function Setup() {
         </CardHeader>
         <CardContent className="grid gap-6">
           {step === 'welcome' && <WelcomeStep />}
+          {step === 'platform' && <PlatformStep draft={draft} setDraft={setDraft} />}
           {step === 'mode' && <ModeStep draft={draft} setDraft={setDraft} />}
           {step === 'config' && <ConfigStep draft={draft} setDraft={setDraft} />}
           {step === 'bots' && <BotsStep />}
@@ -207,6 +209,55 @@ function Stepper({ current }: { current: number }) {
         <div
           key={i}
           className={`h-1 flex-1 rounded ${i <= current ? 'bg-primary' : 'bg-muted'}`}
+        />
+      ))}
+    </div>
+  )
+}
+
+function PlatformStep({
+  draft,
+  setDraft,
+}: {
+  draft: AppConfig
+  setDraft: (c: AppConfig) => void
+}) {
+  const current = draft.platform.kind
+  // Switching platforms inside the first-run wizard always rewrites
+  // chromium.start_url to the new platform's default — a user that's
+  // walking through the wizard hasn't had a chance to customise yet,
+  // and an old default left over from a previous platform pick is
+  // strictly wrong (it would land the launched browser on the wrong
+  // game). Re-customisation, if needed, happens on the Chromium config
+  // step that comes next.
+  const pick = (kind: PlatformKind) => {
+    if (kind === current) return
+    setDraft({
+      ...draft,
+      platform: { kind },
+      capture: {
+        ...draft.capture,
+        chromium: {
+          ...draft.capture.chromium,
+          start_url: platformInfo(kind).defaultStartUrl,
+        },
+      },
+    })
+  }
+
+  return (
+    <div className="grid gap-3">
+      <h2 className="text-lg font-semibold">Pick your platform</h2>
+      <p className="text-sm text-muted-foreground">
+        Akagi listens for one game's WebSocket protocol at a time. You can change this later in Settings.
+      </p>
+      {PLATFORMS.map((p) => (
+        <ModeCard
+          key={p.kind}
+          title={p.label}
+          active={current === p.kind}
+          onClick={() => pick(p.kind)}
+          description={p.description}
         />
       ))}
     </div>
@@ -445,11 +496,14 @@ function ChromiumConfigStep({
           {busy === 'downloading' ? 'Downloading…' : 'Download'}
         </Button>
       </div>
-      <Field label="Start URL">
+      <Field
+        label="Start URL"
+        hint={`Default for ${platformInfo(draft.platform.kind).label}: ${platformInfo(draft.platform.kind).defaultStartUrl}`}
+      >
         <Input
           value={chromium.start_url}
           onChange={(e) => setChromium({ start_url: e.target.value })}
-          placeholder="https://game.maj-soul.com/1/"
+          placeholder={platformInfo(draft.platform.kind).defaultStartUrl}
         />
       </Field>
       {!ready && (
@@ -754,6 +808,7 @@ function FinishStep({ draft }: { draft: AppConfig }) {
     <div className="grid gap-3">
       <h2 className="text-lg font-semibold">All set</h2>
       <div className="rounded-md border border-border/50 p-3 text-sm">
+        <div><b>Platform:</b> {platformInfo(draft.platform.kind).label}</div>
         <div><b>Mode:</b> {m === 'chromium' ? 'Chromium browser' : 'MITM proxy'}</div>
         {m === 'mitm' && (
           <>

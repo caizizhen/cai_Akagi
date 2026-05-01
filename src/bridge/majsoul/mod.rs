@@ -12,7 +12,7 @@
 pub mod parser;
 pub mod tile;
 
-use super::{Bridge, Direction};
+use super::{Bridge, Direction, ParseResult};
 use crate::{
     config::Platform,
     logger::{FlowLogger, Session},
@@ -1053,7 +1053,8 @@ impl Default for MajsoulBridge {
 impl Bridge for MajsoulBridge {
     /// Parse a raw Majsoul WS binary frame, log the decoded message to the
     /// flow log (if any), and emit any resulting mjai events.
-    fn parse(&mut self, direction: Direction, content: &[u8]) -> Vec<MjaiEvent> {
+    fn parse(&mut self, direction: Direction, content: &[u8]) -> ParseResult {
+        use crate::schema::ParsedFrame;
         match self.parser.parse(content) {
             Ok(msg) => {
                 let kind = match msg.msg_type {
@@ -1083,6 +1084,17 @@ impl Bridge for MajsoulBridge {
                     });
                     log.writeln(&line.to_string());
                 }
+                // Build the inspector-facing parsed view BEFORE dispatch
+                // consumes the payload — `dispatch` only borrows `&msg`,
+                // so we can clone the bits we want and still let it run.
+                let parsed = Some(ParsedFrame {
+                    method: msg.method_name.to_string(),
+                    args: json!({
+                        "kind": kind,
+                        "msg_id": msg.msg_id,
+                        "payload": msg.payload.clone(),
+                    }),
+                });
                 let events = self.dispatch(&msg);
                 // Rotate before writing so the StartGame event itself lands
                 // in the freshly-opened file, not the previous game's file.
@@ -1093,7 +1105,7 @@ impl Bridge for MajsoulBridge {
                     self.rotate_mjai_log();
                 }
                 self.write_mjai(&events);
-                events
+                ParseResult { events, parsed }
             }
             Err(e) => {
                 warn!(
@@ -1112,7 +1124,7 @@ impl Bridge for MajsoulBridge {
                     });
                     log.writeln(&line.to_string());
                 }
-                Vec::new()
+                ParseResult::empty()
             }
         }
     }

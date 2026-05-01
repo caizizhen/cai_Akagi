@@ -31,7 +31,12 @@ import {
   SCALE_STEP,
   useUiPrefsStore,
 } from '@/stores/uiPrefsStore'
-import type { AppConfig, CaptureMode, DetectedBrowser } from '@/types'
+import {
+  PLATFORMS,
+  isKnownDefaultStartUrl,
+  platformInfo,
+} from '@/lib/platforms'
+import type { AppConfig, CaptureMode, DetectedBrowser, PlatformKind } from '@/types'
 
 export function Settings() {
   const stored = useConfigStore((s) => s.config)
@@ -152,6 +157,8 @@ export function Settings() {
           <SidebarHoverField />
         </CardContent>
       </Card>
+
+      <PlatformCard draft={draft} setDraft={setDraft} />
 
       <CaptureCard draft={draft} setDraft={setDraft} />
 
@@ -331,6 +338,63 @@ function UiScaleField() {
   )
 }
 
+function PlatformCard({
+  draft,
+  setDraft,
+}: {
+  draft: AppConfig
+  setDraft: (c: AppConfig) => void
+}) {
+  const current = draft.platform.kind
+  const setKind = (kind: PlatformKind) => {
+    if (kind === current) return
+    // If the user hasn't customised the Chromium start URL, swap it to
+    // the new platform's default so the next launch lands on the right
+    // game. A user-customised URL is left alone — the URL field below
+    // shows the platform default as a hint either way.
+    const oldStart = draft.capture.chromium.start_url
+    const nextStart = isKnownDefaultStartUrl(oldStart)
+      ? platformInfo(kind).defaultStartUrl
+      : oldStart
+    setDraft({
+      ...draft,
+      platform: { kind },
+      capture: {
+        ...draft.capture,
+        chromium: { ...draft.capture.chromium, start_url: nextStart },
+      },
+    })
+  }
+  const info = platformInfo(current)
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Platform</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <Field
+          label="Game"
+          hint="Selects which bridge parses the WebSocket protocol. Saving triggers a capture restart so the new bridge picks up the next session."
+        >
+          <Select value={current} onValueChange={(v) => setKind(v as PlatformKind)}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PLATFORMS.map((p) => (
+                <SelectItem key={p.kind} value={p.kind}>
+                  {p.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <p className="text-xs text-muted-foreground">{info.description}</p>
+      </CardContent>
+    </Card>
+  )
+}
+
 function CaptureCard({
   draft,
   setDraft,
@@ -342,7 +406,7 @@ function CaptureCard({
   const chromium = draft.capture?.chromium ?? {
     executable: '',
     user_data_dir: '',
-    start_url: 'https://game.maj-soul.com/1/',
+    start_url: platformInfo(draft.platform.kind).defaultStartUrl,
     cft_channel: 'stable',
     force_cft: false,
     extra_args: [],
@@ -459,11 +523,14 @@ function CaptureCard({
                 placeholder="(default)"
               />
             </Field>
-            <Field label="Start URL">
+            <Field
+              label="Start URL"
+              hint={`Default for ${platformInfo(draft.platform.kind).label}: ${platformInfo(draft.platform.kind).defaultStartUrl}`}
+            >
               <Input
                 value={chromium.start_url}
                 onChange={(e) => setChromium({ start_url: e.target.value })}
-                placeholder="https://game.maj-soul.com/1/"
+                placeholder={platformInfo(draft.platform.kind).defaultStartUrl}
               />
             </Field>
             <Toggle

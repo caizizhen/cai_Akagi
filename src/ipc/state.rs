@@ -23,6 +23,7 @@ use crate::event_bus::{
 };
 use crate::game_state::GameTracker;
 use crate::history::HistoryStore;
+use crate::history::recorder::SharedPlatform;
 use crate::logger::Session;
 use crate::schema::{BotStatus, CaptureStatus};
 use std::collections::HashSet;
@@ -84,6 +85,11 @@ pub struct AppState {
     /// Persistent game-history store. Written by the recorder task,
     /// read by `list_game_history` / `get_game_history_*` IPC commands.
     pub history_store: Arc<HistoryStore>,
+    /// Shared cell holding the platform tag the history recorder stamps
+    /// onto each finalised game. `update_config` updates this when the
+    /// user switches bridges so subsequent records pick up the new tag
+    /// without a relaunch.
+    pub history_platform: SharedPlatform,
 
     /// Bundled-or-system Python + uv. `None` on dev boxes lacking both —
     /// install/sync commands surface a friendly error instead of panicking;
@@ -117,6 +123,7 @@ impl AppState {
         game_tracker: Arc<Mutex<GameTracker>>,
         analysis_cache: AnalysisCache,
         history_store: Arc<HistoryStore>,
+        history_platform: SharedPlatform,
         runtime: Option<PythonRuntime>,
     ) -> Self {
         Self {
@@ -135,6 +142,7 @@ impl AppState {
             game_tracker,
             analysis_cache,
             history_store,
+            history_platform,
             runtime,
             syncs_in_flight: Arc::new(Mutex::new(HashSet::new())),
             bot_manager_started: Arc::new(AtomicBool::new(false)),

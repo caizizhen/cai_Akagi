@@ -106,7 +106,12 @@ impl CaptureBackend for ChromiumBackend {
             ctx.platform,
         ));
 
-        let cdp_run = cdp::run(&cdp_endpoint, bridges.clone(), ctx.mjai_bus.clone());
+        let cdp_run = cdp::run(
+            &cdp_endpoint,
+            bridges.clone(),
+            ctx.mjai_bus.clone(),
+            ctx.session.inspector(),
+        );
         let mut cdp_fut = Box::pin(cdp_run);
         let shutdown_fut = shutdown.wait();
         tokio::pin!(shutdown_fut);

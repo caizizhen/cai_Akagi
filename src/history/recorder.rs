@@ -9,7 +9,7 @@
 //! `StartGame` or on shutdown — that is the contract for "complete game
 //! only" recording.
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use chrono::{DateTime, Utc};
 use tokio::sync::broadcast::{Receiver, error::RecvError};
@@ -21,6 +21,18 @@ use crate::history::aggregator::{AggregateInput, aggregate};
 use crate::history::store::HistoryStore;
 use crate::schema::{HistoryEvent, MjaiEvent, Platform};
 
+/// Shared cell holding the platform tag every newly-finalised `GameRecord`
+/// is stamped with. `update_config` writes here when the user switches
+/// bridges so subsequent games persist with the correct platform without
+/// requiring an app relaunch. Reads are sync (cheap, non-blocking) because
+/// the recorder finalises inside a Tokio task.
+pub type SharedPlatform = Arc<RwLock<Platform>>;
+
+/// Convenience constructor for [`SharedPlatform`].
+pub fn shared_platform(initial: Platform) -> SharedPlatform {
+    Arc::new(RwLock::new(initial))
+}
+
 /// Hard cap on per-game buffer size. Defends against runaway streams
 /// (a normal hanchan is ~1500 events; tonpuu ~600). On overflow the
 /// buffer is cleared and the game is forfeited from history.
@@ -31,7 +43,7 @@ const MAX_EVENTS_PER_GAME: usize = 5_000;
 pub async fn drive_loop(
     store: Arc<HistoryStore>,
     history_bus: HistoryBus,
-    platform: Platform,
+    platform: SharedPlatform,
     mut mjai_rx: Receiver<MjaiEvent>,
 ) {
     let mut state = RecorderState::new(platform);
@@ -56,7 +68,10 @@ pub async fn drive_loop(
 }
 
 struct RecorderState {
-    platform: Platform,
+    /// Read at finalise time so a runtime platform change picks up on the
+    /// next completed game. Cloned out under a sync read lock to avoid
+    /// holding the lock across the aggregator call.
+    platform: SharedPlatform,
     /// In-flight buffer; `None` until the first `start_game` arrives.
     buf: Option<Vec<MjaiEvent>>,
     /// Wall-clock time of the active buffer's first event.
@@ -70,7 +85,7 @@ struct RecorderState {
 }
 
 impl RecorderState {
-    fn new(platform: Platform) -> Self {
+    fn new(platform: SharedPlatform) -> Self {
         Self {
             platform,
             buf: None,
@@ -133,9 +148,13 @@ impl RecorderState {
         let ended_at = Utc::now();
         let id = Ulid::new().to_string();
 
+        let platform = *self
+            .platform
+            .read()
+            .expect("history platform lock poisoned");
         let Some(record) = aggregate(AggregateInput {
             events: &events,
-            platform: self.platform,
+            platform,
             started_at,
             ended_at,
             id: id.clone(),
@@ -212,7 +231,7 @@ mod tests {
         let store_clone = store.clone();
         let bus_clone = history_tx.clone();
         let handle = tokio::spawn(async move {
-            drive_loop(store_clone, bus_clone, Platform::Majsoul, rx).await
+            drive_loop(store_clone, bus_clone, shared_platform(Platform::Majsoul), rx).await
         });
 
         tx.send(start_game()).unwrap();
@@ -251,7 +270,7 @@ mod tests {
         let store_clone = store.clone();
         let bus_clone = history_tx.clone();
         let handle = tokio::spawn(async move {
-            drive_loop(store_clone, bus_clone, Platform::Majsoul, rx).await
+            drive_loop(store_clone, bus_clone, shared_platform(Platform::Majsoul), rx).await
         });
 
         tx.send(start_game()).unwrap();
@@ -283,7 +302,7 @@ mod tests {
         let store_clone = store.clone();
         let bus_clone = history_tx.clone();
         let handle = tokio::spawn(async move {
-            drive_loop(store_clone, bus_clone, Platform::Majsoul, rx).await
+            drive_loop(store_clone, bus_clone, shared_platform(Platform::Majsoul), rx).await
         });
 
         // First game starts but never ends.

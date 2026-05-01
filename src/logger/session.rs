@@ -1,4 +1,6 @@
-use crate::logger::{binary::BinaryLogger, flow::FlowLogger};
+use crate::inspector::{InspectorBus, InspectorWriter};
+use crate::logger::{binary::BinaryLogger, flow::FlowLogger, stream::{LogStreamHandle, LogStreamLayer}};
+use crate::schema::{InspectorEntry, LogEntry};
 use anyhow::{Context, Result};
 use chrono::Local;
 use std::{
@@ -7,6 +9,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
 };
+use tokio::sync::broadcast;
 use tracing::{Event, Subscriber};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
@@ -81,6 +84,17 @@ pub struct Session {
     dir: PathBuf,
     binary_loggers: RwLock<HashMap<String, Arc<BinaryLogger>>>,
     _guards: Vec<WorkerGuard>,
+    /// Handle to the JSONL + broadcast layer. Kept on `Session` so the
+    /// IPC layer can call `subscribe_log_events` long after init, and so
+    /// the file handle survives any errant drops of the layer itself.
+    stream: LogStreamHandle,
+    /// Inspector writer (frames / mjai / bot reactions). Cloned out and
+    /// passed to every emitter (`Session::inspector()` returns a clone).
+    inspector_writer: InspectorWriter,
+    /// Inspector broadcast sender. `subscribe_inspector` IPC grabs a
+    /// receiver from this. Kept separately so subscribers don't have to
+    /// touch the writer.
+    inspector_bus: InspectorBus,
 }
 
 impl Session {
@@ -136,6 +150,31 @@ impl Session {
                 .boxed(),
         );
 
+        // Combined all.jsonl — same severity filter as `all.log`, but the
+        // line shape is `serde_json::to_writer(LogEntry)`. The layer also
+        // broadcasts each entry on a tokio channel so the frontend log
+        // viewer can live-tail without polling. Keep `all.log` in parallel
+        // for humans tailing from a terminal.
+        let jsonl_path = dir.join("all.jsonl");
+        let (stream_layer, stream_handle) =
+            LogStreamLayer::open(&jsonl_path, 1024).with_context(|| {
+                format!("Failed to open {}", jsonl_path.display())
+            })?;
+        let jsonl_filter =
+            EnvFilter::try_new(all_level).unwrap_or_else(|_| EnvFilter::new("info"));
+        layers.push(stream_layer.with_filter(jsonl_filter).boxed());
+
+        // Inspector pipeline timeline. Separate file from `all.jsonl`
+        // because the events are different — these are game-data records
+        // (frames, mjai events, bot reactions), not application logs —
+        // and conflating them would multiply file size and complicate
+        // filtering on either side.
+        let inspector_path = dir.join("inspector.jsonl");
+        let (inspector_writer, inspector_bus) =
+            InspectorWriter::open(&inspector_path, 1024).with_context(|| {
+                format!("Failed to open {}", inspector_path.display())
+            })?;
+
         // Per-target files.
         for t in targets {
             let path = dir.join(format!("{}.log", t.name));
@@ -169,11 +208,47 @@ impl Session {
             dir,
             binary_loggers: RwLock::new(HashMap::new()),
             _guards: guards,
+            stream: stream_handle,
+            inspector_writer,
+            inspector_bus,
         })
     }
 
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    /// Parent of `dir()` — the configured log root that holds every
+    /// session sub-directory. Returned for the in-app session picker so
+    /// it can list sibling runs of the current process.
+    pub fn root(&self) -> &Path {
+        // `dir` is always `<root>/<YYYYMMDD-HHMMSS>` per `Session::init`,
+        // so `parent()` is always `Some` in practice. Fall back to the
+        // session dir itself if it isn't (e.g. the OS handed us a
+        // root-level path), which still produces a valid query target.
+        self.dir.parent().unwrap_or(&self.dir)
+    }
+
+    /// Subscribe to the live broadcast of `LogEntry` events. The IPC
+    /// `subscribe_log_events` command grabs one of these per frontend
+    /// channel; the stream is lossy under load (consumer-side `Lagged(n)`
+    /// surfaces as a synthetic warn entry to keep the UI honest).
+    pub fn subscribe(&self) -> broadcast::Receiver<LogEntry> {
+        self.stream.subscribe()
+    }
+
+    /// Clone of the inspector writer. Call sites are the proxy handler,
+    /// chromium capture, mjai-bus subscriber, and bot manager. Cheap
+    /// (Arc<Inner>); each clone independently writes to disk + broadcast.
+    pub fn inspector(&self) -> InspectorWriter {
+        self.inspector_writer.clone()
+    }
+
+    /// Subscribe to the live broadcast of `InspectorEntry` rows. Used by
+    /// the `subscribe_inspector` IPC command; same lossy semantics as the
+    /// log stream.
+    pub fn subscribe_inspector(&self) -> broadcast::Receiver<InspectorEntry> {
+        self.inspector_bus.subscribe()
     }
 
     /// Create a fresh flow logger writing to
