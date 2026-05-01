@@ -60,6 +60,13 @@ pub fn calculate_score(
 /// haitei/houtei from `wall.drawable_count` + `is_rinshan_flag`,
 /// rinshan from `is_rinshan_flag`, ippatsu from `players[actor].ippatsu_cycle`,
 /// chankan from `pending_kan.is_some()` (ron only).
+///
+/// `tsumo_first_turn` (tenhou/chiihou) is derived from observable state
+/// rather than `state.is_first_turn` — riichienv-core 0.4.8's mjai-event
+/// handler initializes that flag to `true` on `start_kyoku` and never
+/// resets it on `Dahai` (only the replay-mode `apply_log_action` does), so
+/// trusting it would classify every menzen tsumo as
+/// tenhou/chiihou yakuman.
 pub fn evaluate_hora_4p(state: &GameState, actor: u8, is_tsumo: bool) -> Option<HoraScoreInfo> {
     let actor_idx = actor as usize;
     if actor_idx >= state.players.len() {
@@ -70,10 +77,15 @@ pub fn evaluate_hora_4p(state: &GameState, actor: u8, is_tsumo: bool) -> Option<
     let win_tile_136 = if is_tsumo {
         state.drawn_tile?
     } else {
-        state.last_discard.map(|(t, _)| t)?
+        // last_discard is (actor, tile) — second slot is the tile.
+        state.last_discard.map(|(_, t)| t)?
     };
 
     let evaluator = HandEvaluator::new(player.hand.clone(), player.melds.clone());
+
+    let first_turn = is_tsumo
+        && player.discards.is_empty()
+        && state.players.iter().all(|p| p.melds.is_empty());
 
     let conditions = Conditions {
         tsumo: is_tsumo,
@@ -84,7 +96,7 @@ pub fn evaluate_hora_4p(state: &GameState, actor: u8, is_tsumo: bool) -> Option<
         houtei: !is_tsumo && state.wall.drawable_count == 0 && !state.is_rinshan_flag,
         rinshan: is_tsumo && state.is_rinshan_flag,
         chankan: !is_tsumo && state.pending_kan.is_some(),
-        tsumo_first_turn: is_tsumo && state.is_first_turn,
+        tsumo_first_turn: first_turn,
         player_wind: Wind::from((actor + 4 - state.oya) % 4),
         round_wind: Wind::from(state.round_wind),
         riichi_sticks: state.riichi_sticks,
@@ -127,6 +139,8 @@ pub fn evaluate_hora_4p(state: &GameState, actor: u8, is_tsumo: bool) -> Option<
 }
 
 /// 3-player variant. Tsumo splits across 2 ko (or 2 ko for dealer in 3p).
+/// Same `last_discard` / `is_first_turn` workarounds as the 4p variant —
+/// see its doc comment for rationale.
 pub fn evaluate_hora_3p(state: &GameState3P, actor: u8, is_tsumo: bool) -> Option<HoraScoreInfo> {
     let actor_idx = actor as usize;
     if actor_idx >= state.players.len() {
@@ -137,10 +151,15 @@ pub fn evaluate_hora_3p(state: &GameState3P, actor: u8, is_tsumo: bool) -> Optio
     let win_tile_136 = if is_tsumo {
         state.drawn_tile?
     } else {
-        state.last_discard.map(|(t, _)| t)?
+        // last_discard is (actor, tile) — second slot is the tile.
+        state.last_discard.map(|(_, t)| t)?
     };
 
     let evaluator = HandEvaluator::new(player.hand.clone(), player.melds.clone());
+
+    let first_turn = is_tsumo
+        && player.discards.is_empty()
+        && state.players.iter().all(|p| p.melds.is_empty());
 
     let conditions = Conditions {
         tsumo: is_tsumo,
@@ -151,7 +170,7 @@ pub fn evaluate_hora_3p(state: &GameState3P, actor: u8, is_tsumo: bool) -> Optio
         houtei: !is_tsumo && state.wall.drawable_count == 0 && !state.is_rinshan_flag,
         rinshan: is_tsumo && state.is_rinshan_flag,
         chankan: !is_tsumo && state.pending_kan.is_some(),
-        tsumo_first_turn: is_tsumo && state.is_first_turn,
+        tsumo_first_turn: first_turn,
         player_wind: Wind::from((actor + 3 - state.oya) % 3),
         round_wind: Wind::from(state.round_wind),
         riichi_sticks: state.riichi_sticks,
@@ -222,13 +241,23 @@ pub fn is_tenpai(hand_text: &str) -> Result<bool> {
 mod tests {
     use super::*;
 
-    /// Build a closed-hand GameState where seat 0 is in chiitoitsu tenpai
-    /// for `7s`. Used by the `evaluate_hora_4p_*` tests below — we set
-    /// `drawn_tile` (tsumo) or `last_discard` (ron) to 7s after running
+    /// Build a closed-hand GameState where seat `actor` is in chiitoitsu
+    /// tenpai for `8s` (tile id 100, 34-space index 25). Used by the
+    /// `evaluate_hora_4p_*` tests below — we set `drawn_tile` (tsumo) or
+    /// `last_discard` (ron) to a second copy of 8s (id 101) after running
     /// `start_kyoku`-equivalent setup.
     ///
     /// Tile IDs are in 136-space; we pick the lowest copy of each tile to
     /// keep things deterministic and avoid red-five sentinels (16/52/88).
+    /// Encoding cheat-sheet: `id / 4` gives the 34-space index — manzu 0-8
+    /// (1m..9m), pinzu 9-17 (1p..9p), souzu 18-26 (1s..9s), honors 27-33.
+    /// So 100/4=25 is 8s, not 7s.
+    ///
+    /// Pushes one fake non-actor discard so the `tsumo_first_turn`
+    /// workaround in `evaluate_hora_4p` evaluates to `false` — these tests
+    /// want to exercise mid-round chiitoitsu scoring, not tenhou/chiihou
+    /// yakuman. (See `evaluate_hora_4p_tsumo_first_turn_*` for tests that
+    /// actually exercise the first-turn path.)
     fn chiitoitsu_state(actor: u8, oya: u8) -> GameState {
         let rule = riichienv_core::rule::GameRule::default_tenhou();
         let mut s = GameState::new(0, true, None, 0, rule);
@@ -238,27 +267,34 @@ mod tests {
         s.riichi_sticks = 0;
         s.is_first_turn = false;
 
-        // 11m 22m 33p 44p 55s 66s + tenpai-on-7s (13 tiles).
+        // 11m 22m 33p 44p 66s 77s + tenpai-on-8s (13 tiles).
         let hand = vec![
             0, 1, // 1m 1m
             4, 5, // 2m 2m
             44, 45, // 3p 3p
             48, 49, // 4p 4p
-            92, 93, // 5s 5s
-            96, 97, // 6s 6s
-            100, // 7s
+            92, 93, // 6s 6s
+            96, 97, // 7s 7s
+            100, // 8s (lone — chiitoitsu wait)
         ];
         s.players[actor as usize].hand = hand;
+
+        // Push a sentinel discard from a different seat so the first-turn
+        // workaround sees a non-empty river somewhere and skips
+        // tenhou/chiihou.
+        let other = (actor + 1) % 4;
+        s.players[other as usize].discards.push(0); // 1m
+
         s
     }
 
     #[test]
     fn evaluate_hora_4p_tsumo_chiitoitsu_dealer() {
-        // Dealer (oya=0) tsumo on 7s, chiitoitsu shape. Closed hand →
+        // Dealer (oya=0) tsumo on 8s, chiitoitsu shape. Closed hand →
         // chiitoitsu (2 han) + menzen tsumo (1 han) at the very least.
         // Score must be a positive multiple of 100 with han ≥ 1.
         let mut s = chiitoitsu_state(0, 0);
-        s.drawn_tile = Some(101); // 7s (second copy)
+        s.drawn_tile = Some(101); // 8s (second copy)
         s.players[0].hand.push(101);
 
         let info = evaluate_hora_4p(&s, 0, true).expect("winning shape");
@@ -269,14 +305,101 @@ mod tests {
 
     #[test]
     fn evaluate_hora_4p_ron_chiitoitsu_non_dealer() {
-        // Non-dealer (oya=1) ron on 7s discarded by seat 1. Chiitoitsu → 2 han.
+        // Non-dealer (oya=1) ron on 8s discarded by seat 1. Chiitoitsu → 2 han.
+        // riichienv stores last_discard as (actor, tile) — discarder first.
         let mut s = chiitoitsu_state(0, 1);
-        s.last_discard = Some((101, 1)); // 7s, discarder = seat 1
+        s.last_discard = Some((1, 101)); // discarder = seat 1, tile = 8s
 
         let info = evaluate_hora_4p(&s, 0, false).expect("winning shape");
         assert!(info.han >= 2, "han = {}", info.han);
         assert!(info.fu >= 20, "fu = {}", info.fu);
         assert!(info.points > 0, "points = {}", info.points);
+        assert_eq!(info.win_tile, "8s", "win tile must come from tile slot");
+    }
+
+    /// Regression: `evaluate_hora_4p` previously read `last_discard.0` as
+    /// the win tile, but riichienv stores it as `(actor, tile)`. With seat
+    /// 1 discarding 8s, the bug extracted seat=1 → win_tile_34=0 → "1m",
+    /// the hand-evaluator failed to find a winning shape, and the function
+    /// returned `None`. The frontend then showed no score for ron actions.
+    #[test]
+    fn evaluate_hora_4p_ron_uses_tile_not_discarder_seat() {
+        let mut s = chiitoitsu_state(0, 1);
+        // Discarder seat (1) and the tile (8s = 101) deliberately differ.
+        // If we ever regress to reading the actor slot, win_tile_34 would
+        // be 0 (1m) and we'd get None back.
+        s.last_discard = Some((1, 101));
+        let info = evaluate_hora_4p(&s, 0, false)
+            .expect("winning shape — tile slot must be read for the ron tile");
+        assert_eq!(info.win_tile, "8s");
+    }
+
+    /// Regression: every menzen tsumo used to score as tenhou/chiihou
+    /// yakuman (32000 non-dealer / 48000 dealer) because riichienv-core
+    /// 0.4.8's `apply_mjai_event` initializes `is_first_turn = true` on
+    /// `start_kyoku` and never flips it back to `false` (only the
+    /// replay-mode `apply_log_action` does). We now derive the first-turn
+    /// condition from `players[].discards` + `players[].melds` instead of
+    /// trusting the stuck flag.
+    #[test]
+    fn evaluate_hora_4p_tsumo_not_first_turn_when_actor_has_discarded() {
+        // Non-dealer (seat 0, oya=1) chiitoitsu tsumo on 7s. The actor's
+        // own river is non-empty, so it can't possibly be chiihou.
+        let mut s = chiitoitsu_state(0, 1);
+        s.players[0].discards.push(0); // actor has already discarded
+        s.is_first_turn = true; // simulate the riichienv flag being stuck
+        s.drawn_tile = Some(101);
+        s.players[0].hand.push(101);
+
+        let info = evaluate_hora_4p(&s, 0, true).expect("winning shape");
+        assert!(!info.yakuman, "must not score as chiihou yakuman");
+        assert!(
+            info.points < 32_000,
+            "non-dealer mid-round chiitoitsu tsumo cannot reach 32000 — got {}",
+            info.points,
+        );
+    }
+
+    /// Tenhou/chiihou should still apply when the state genuinely shows a
+    /// first-turn tsumo: nobody has discarded or called yet.
+    #[test]
+    fn evaluate_hora_4p_tsumo_first_turn_triggers_chiihou() {
+        // chiitoitsu_state pushes a sentinel discard for the workaround;
+        // strip every river so the workaround sees a true first turn.
+        let mut s = chiitoitsu_state(0, 1);
+        for p in &mut s.players {
+            p.discards.clear();
+        }
+        s.drawn_tile = Some(101);
+        s.players[0].hand.push(101);
+
+        let info = evaluate_hora_4p(&s, 0, true).expect("winning shape");
+        assert!(info.yakuman, "non-dealer first-turn tsumo is chiihou");
+        // Chiihou (single yakuman) non-dealer = 16000 + 8000*2 = 32000.
+        assert_eq!(info.points, 32_000);
+    }
+
+    /// Any open meld anywhere on the table breaks first-turn yakuman.
+    #[test]
+    fn evaluate_hora_4p_tsumo_first_turn_blocked_by_any_meld() {
+        use riichienv_core::types::{Meld, MeldType};
+        let mut s = chiitoitsu_state(0, 1);
+        for p in &mut s.players {
+            p.discards.clear();
+        }
+        // A pon by some other seat — calls have happened, so chiihou is off.
+        s.players[2].melds.push(Meld {
+            meld_type: MeldType::Pon,
+            tiles: vec![0, 1, 2],
+            opened: true,
+            from_who: -1,
+            called_tile: Some(0),
+        });
+        s.drawn_tile = Some(101);
+        s.players[0].hand.push(101);
+
+        let info = evaluate_hora_4p(&s, 0, true).expect("winning shape");
+        assert!(!info.yakuman, "calls present → no chiihou");
     }
 
     #[test]
