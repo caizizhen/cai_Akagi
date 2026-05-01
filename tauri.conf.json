@@ -1,7 +1,6 @@
 {
   "productName": "Akagi",
-  "version": "0.1.0",
-  "identifier": "com.akagi.app",
+  "identifier": "com.akagi.akagi",
   "build": {
     "frontendDist": "./frontend/dist",
     "devUrl": "http://localhost:1420",
