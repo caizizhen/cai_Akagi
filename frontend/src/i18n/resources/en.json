@@ -407,7 +407,7 @@
     "capture_chromium": "Capture (Chromium)",
     "capture_mitm": "Capture (MITM)",
     "log_session": "Log Session",
-    "last_analysis": "Last analysis",
+    "last_analysis": "Latest analysis",
     "open_dashboard": "Open Game Dashboard"
   },
   "game": {

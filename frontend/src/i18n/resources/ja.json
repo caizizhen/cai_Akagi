@@ -407,7 +407,7 @@
     "capture_chromium": "Capture（Chromium）",
     "capture_mitm": "Capture（MITM）",
     "log_session": "ログセッション",
-    "last_analysis": "最後の解析",
+    "last_analysis": "最新の解析",
     "open_dashboard": "対局ダッシュボードを開く"
   },
   "game": {

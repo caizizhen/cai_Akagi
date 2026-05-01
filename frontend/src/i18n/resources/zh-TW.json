@@ -407,7 +407,7 @@
     "capture_chromium": "Capture（Chromium）",
     "capture_mitm": "Capture（MITM）",
     "log_session": "日誌 Session",
-    "last_analysis": "最後一次分析",
+    "last_analysis": "最新一次分析",
     "open_dashboard": "開啟對局儀表板"
   },
   "game": {
