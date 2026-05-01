@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { TileFrame } from '@/components/TileFrame'
 import { Mahgen } from '@/components/Mahgen'
 import { useGameStore } from '@/stores/gameStore'
@@ -11,14 +12,15 @@ const SEAT_TO_TILE: Record<number, TileId> = {
   3: 'player-3',
 }
 
-const KIND_LABEL: Record<string, string> = {
-  self: 'Self',
-  shimocha: '下家',
-  toimen: '対面',
-  kamicha: '上家',
+const KIND_TKEY: Record<string, string> = {
+  self: 'mahjong.self',
+  shimocha: 'mahjong.shimocha',
+  toimen: 'mahjong.toimen',
+  kamicha: 'mahjong.kamicha',
 }
 
 export function PlayerTile({ seat, bp }: { seat: number; bp: Breakpoint }) {
+  const { t } = useTranslation()
   const game = useGameStore((s) => s.game)
   const view = useGameStore((s) => s.view)
   const numPlayers = game?.num_players ?? 4
@@ -28,7 +30,9 @@ export function PlayerTile({ seat, bp }: { seat: number; bp: Breakpoint }) {
   const kind = relativeKind(seat, ourSeat, numPlayers)
   const isSelf = kind === 'self'
   const id = SEAT_TO_TILE[seat]
-  const title = `Player ${seat + 1}${isSelf ? ' (Self)' : ''}`
+  const title = isSelf
+    ? t('tile.player_n_self', { n: seat + 1 })
+    : t('tile.player_n', { n: seat + 1 })
 
   // bakaze of this seat (E/S/W rotates from oya in 3p; E/S/W/N in 4p)
   const seatWind = game ? bakazeFor(seat, game.oya, numPlayers) : '—'
@@ -41,7 +45,7 @@ export function PlayerTile({ seat, bp }: { seat: number; bp: Breakpoint }) {
       bp={bp}
       rightSlot={
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground px-1">
-          {KIND_LABEL[kind]}
+          {t(KIND_TKEY[kind])}
         </span>
       }
       contentClassName="flex flex-col gap-2"
@@ -51,12 +55,12 @@ export function PlayerTile({ seat, bp }: { seat: number; bp: Breakpoint }) {
           <span className="text-sm font-semibold">{seatWind}</span>
           {player?.riichi_declared && (
             <span className="rounded bg-amber-500/15 text-amber-400 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase">
-              Riichi
+              {t('mahjong.riichi')}
             </span>
           )}
           {kitaCount > 0 && (
             <span
-              title="Kita / 北抜き (nukidora)"
+              title={t('mahjong.kita')}
               className="rounded bg-sky-500/15 text-sky-400 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
             >
               北×{kitaCount}

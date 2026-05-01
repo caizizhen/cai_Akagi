@@ -59,8 +59,8 @@ export function GameDetailDialog({
               </span>
             </Section>
             <Section title={t('history.detail.platform')}>
-              <span className="capitalize text-sm">
-                {record.platform.replace('_', ' ')}
+              <span className="text-sm">
+                {t(`platform.${record.platform}`)}
               </span>
             </Section>
             <Section title={t('history.detail.mode')}>
@@ -102,10 +102,10 @@ export function GameDetailDialog({
                         >
                           <TableCell>{rank}</TableCell>
                           <TableCell>
-                            {record.names[seat] || `Seat ${seat}`}
+                            {record.names[seat] || t('history.detail.seat_fallback', { seat })}
                             {isUs && (
                               <span className="ml-1 text-xs text-muted-foreground">
-                                (you)
+                                {t('history.detail.you_marker')}
                               </span>
                             )}
                           </TableCell>
@@ -134,16 +134,16 @@ export function GameDetailDialog({
 
             <Section title={t('history.detail.stats')}>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1 text-xs">
-                <Stat label="Round" value={record.stats.round} />
-                <Stat label="Oya" value={record.stats.oya} />
-                <Stat label="Agari" value={record.stats.agari} />
-                <Stat label="Houjuu" value={record.stats.houjuu} />
-                <Stat label="Riichi" value={record.stats.riichi} />
-                <Stat label="Fuuro" value={record.stats.fuuro} />
-                <Stat label="Ryukyoku" value={record.stats.ryukyoku} />
-                <Stat label="Yakuman" value={record.stats.yakuman} />
+                <Stat label={t('mahjong.round')} value={record.stats.round} />
+                <Stat label={t('mahjong.oya')} value={record.stats.oya} />
+                <Stat label={t('mahjong.agari')} value={record.stats.agari} />
+                <Stat label={t('mahjong.houjuu')} value={record.stats.houjuu} />
+                <Stat label={t('mahjong.riichi')} value={record.stats.riichi} />
+                <Stat label={t('mahjong.fuuro')} value={record.stats.fuuro} />
+                <Stat label={t('mahjong.ryukyoku')} value={record.stats.ryukyoku} />
+                <Stat label={t('mahjong.yakuman')} value={record.stats.yakuman} />
                 <Stat
-                  label="Nagashi mangan"
+                  label={t('mahjong.nagashi_mangan')}
                   value={record.stats.nagashi_mangan}
                 />
               </div>

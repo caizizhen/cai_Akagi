@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { TileFrame } from '@/components/TileFrame'
 import { Button } from '@/components/ui/button'
 import { useCaptureStore } from '@/stores/captureStore'
@@ -14,13 +15,14 @@ const STATE_COLOR: Record<string, string> = {
 }
 
 export function ProxyControlTile({ bp }: { bp: Breakpoint }) {
+  const { t } = useTranslation()
   const status = useCaptureStore((s) => s.status)
   const [busy, setBusy] = useState(false)
 
   const dot = STATE_COLOR[status.state] ?? 'bg-zinc-500'
   const descriptor = 'descriptor' in status && status.descriptor ? status.descriptor : '—'
   const kind = 'kind' in status ? status.kind : null
-  const title = kind === 'chromium' ? 'Capture (Chromium)' : 'Capture (MITM)'
+  const title = kind === 'chromium' ? t('overview.capture_chromium') : t('overview.capture_mitm')
 
   const call = async (cmd: 'start_capture' | 'stop_capture' | 'restart_capture') => {
     setBusy(true)
@@ -53,7 +55,7 @@ export function ProxyControlTile({ bp }: { bp: Breakpoint }) {
           disabled={busy || status.state === 'running' || status.state === 'starting'}
         >
           <Play className="h-3.5 w-3.5" />
-          Start
+          {t('common.start')}
         </Button>
         <Button
           variant="outline"
@@ -64,7 +66,7 @@ export function ProxyControlTile({ bp }: { bp: Breakpoint }) {
           disabled={busy}
         >
           <RotateCw className="h-3.5 w-3.5" />
-          Restart
+          {t('common.restart')}
         </Button>
         <Button
           variant="destructive"
@@ -75,7 +77,7 @@ export function ProxyControlTile({ bp }: { bp: Breakpoint }) {
           disabled={busy || status.state === 'stopped'}
         >
           <Square className="h-3.5 w-3.5" />
-          Stop
+          {t('common.stop')}
         </Button>
       </div>
 

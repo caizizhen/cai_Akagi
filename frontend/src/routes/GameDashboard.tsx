@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Responsive,
   useContainerWidth,
@@ -27,6 +28,7 @@ import { AddTileMenu } from '@/components/AddTileMenu'
 const BOT_DISABLED_TOAST_ID = 'bot-disabled-warning'
 
 export function GameDashboard() {
+  const { t } = useTranslation()
   const layouts = useLayoutStore((s) => s.layouts)
   const hidden = useLayoutStore((s) => s.hidden)
   const mode = useLayoutStore((s) => s.mode)
@@ -46,9 +48,9 @@ export function GameDashboard() {
   // botEnabled is undefined while config is still loading — wait for a real value.
   useEffect(() => {
     if (botEnabled === false) {
-      toast.warning('Bot is disabled', {
+      toast.warning(t('game.bot_disabled_title'), {
         id: BOT_DISABLED_TOAST_ID,
-        description: 'Enable bots in Settings to receive recommendations.',
+        description: t('game.bot_disabled_desc'),
         duration: Infinity,
       })
     } else if (botEnabled === true) {
@@ -57,7 +59,7 @@ export function GameDashboard() {
     return () => {
       toast.dismiss(BOT_DISABLED_TOAST_ID)
     }
-  }, [botEnabled])
+  }, [botEnabled, t])
 
   const [bp, setBp] = useState<Breakpoint>('lg')
   const visibleIds = visibleTilesFor(bp, hidden, mode)
@@ -73,11 +75,11 @@ export function GameDashboard() {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-muted/20">
-        <h1 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">Game</h1>
+        <h1 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">{t('nav.game')}</h1>
         <div className="ml-auto flex items-center gap-2">
           <AddTileMenu bp={bp} />
           <Button variant="ghost" size="sm" onClick={reset} className="text-xs">
-            Reset Layout
+            {t('common.reset_layout')}
           </Button>
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { TileFrame } from '@/components/TileFrame'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { useGameStore } from '@/stores/gameStore'
@@ -18,22 +19,23 @@ import type { Breakpoint } from '@/tiles/defaults'
 const NO_OPPONENTS: readonly OpponentRisk[] = []
 
 export function OpponentsTile({ bp }: { bp: Breakpoint }) {
+  const { t } = useTranslation()
   const opponents = useAnalysisStore((s) => s.result?.opponents ?? NO_OPPONENTS)
   const ourSeat = useGameStore((s) => s.game?.our_seat ?? null)
   const numPlayers = useGameStore((s) => s.game?.num_players ?? 4)
 
   return (
-    <TileFrame id="opponents" title="Opponents" bp={bp} contentClassName="p-0">
+    <TileFrame id="opponents" title={t('tile.opponents')} bp={bp} contentClassName="p-0">
       {opponents.length === 0 ? (
-        <span className="text-muted-foreground text-sm p-3 block">Awaiting analysis.</span>
+        <span className="text-muted-foreground text-sm p-3 block">{t('tile.opponents_empty')}</span>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-[10px] uppercase">Seat</TableHead>
-              <TableHead className="text-[10px] uppercase">Tenpai</TableHead>
-              <TableHead className="text-[10px] uppercase">Riichi</TableHead>
-              <TableHead className="text-[10px] uppercase text-right">Max Risk</TableHead>
+              <TableHead className="text-[10px] uppercase">{t('tile.opponents_seat')}</TableHead>
+              <TableHead className="text-[10px] uppercase">{t('tile.opponents_tenpai')}</TableHead>
+              <TableHead className="text-[10px] uppercase">{t('tile.opponents_riichi')}</TableHead>
+              <TableHead className="text-[10px] uppercase text-right">{t('tile.opponents_max_risk')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

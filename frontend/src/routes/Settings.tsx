@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useBlocker } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,6 +40,7 @@ import {
 import type { AppConfig, CaptureMode, DetectedBrowser, PlatformKind } from '@/types'
 
 export function Settings() {
+  const { t } = useTranslation()
   const stored = useConfigStore((s) => s.config)
   const setStored = useConfigStore((s) => s.setConfig)
   const [draft, setDraft] = useState<AppConfig | null>(stored)
@@ -73,7 +75,7 @@ export function Settings() {
   }, [dirty])
 
   if (!draft) {
-    return <div className="p-6 text-muted-foreground">Loading config…</div>
+    return <div className="p-6 text-muted-foreground">{t('settings.loading_config')}</div>
   }
 
   const save = async () => {
@@ -112,16 +114,16 @@ export function Settings() {
   return (
     <div className="p-6 w-full flex flex-col gap-6">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Settings</h1>
+        <h1 className="text-2xl font-semibold">{t('settings.title')}</h1>
         <div className="flex gap-2">
           <Button variant="ghost" asChild>
-            <Link to="/setup?rerun=1">Re-run setup</Link>
+            <Link to="/setup?rerun=1">{t('settings.rerun_setup')}</Link>
           </Button>
           <Button variant="outline" onClick={() => setDraft(stored)} disabled={!dirty || saving}>
-            Reset
+            {t('common.reset')}
           </Button>
           <Button onClick={save} disabled={!dirty || saving}>
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? t('common.saving') : t('common.save')}
           </Button>
         </div>
       </header>
@@ -134,10 +136,10 @@ export function Settings() {
 
       <Card>
         <CardHeader>
-          <CardTitle>General</CardTitle>
+          <CardTitle>{t('settings.general')}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <Field label="Language">
+          <Field label={t('settings.language')}>
             <Select
               value={draft.general.language}
               onValueChange={(v) => setDraft({ ...draft, general: { ...draft.general, language: v } })}
@@ -164,23 +166,23 @@ export function Settings() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Logging</CardTitle>
+          <CardTitle>{t('settings.logging')}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <Field label="Directory">
+          <Field label={t('settings.directory')}>
             <Input
               value={draft.logging.dir}
               onChange={(e) => setDraft({ ...draft, logging: { ...draft.logging, dir: e.target.value } })}
             />
           </Field>
-          <Field label="App log level">
+          <Field label={t('settings.app_log_level')}>
             <Input
               value={draft.logging.level}
               onChange={(e) => setDraft({ ...draft, logging: { ...draft.logging, level: e.target.value } })}
               placeholder="info"
             />
           </Field>
-          <Field label="Crate log level">
+          <Field label={t('settings.crate_log_level')}>
             <Input
               value={draft.logging.all_level}
               onChange={(e) => setDraft({ ...draft, logging: { ...draft.logging, all_level: e.target.value } })}
@@ -192,34 +194,34 @@ export function Settings() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Bots</CardTitle>
+          <CardTitle>{t('settings.bots')}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
           <Toggle
-            label="Bot enabled"
+            label={t('settings.bot_enabled')}
             value={draft.bot.enabled}
             onChange={(v) => setDraft({ ...draft, bot: { ...draft.bot, enabled: v } })}
           />
           <Toggle
-            label="Auto-sync (uv sync on first spawn)"
+            label={t('settings.auto_sync')}
             value={draft.bot.auto_sync}
             onChange={(v) => setDraft({ ...draft, bot: { ...draft.bot, auto_sync: v } })}
           />
-          <Field label="Active bot (4p)">
+          <Field label={t('settings.active_bot_4p')}>
             <Input
               value={draft.bot.active_4p}
               onChange={(e) => setDraft({ ...draft, bot: { ...draft.bot, active_4p: e.target.value } })}
               placeholder="mortal"
             />
           </Field>
-          <Field label="Active bot (3p, sanma)">
+          <Field label={t('settings.active_bot_3p')}>
             <Input
               value={draft.bot.active_3p}
               onChange={(e) => setDraft({ ...draft, bot: { ...draft.bot, active_3p: e.target.value } })}
-              placeholder="(none)"
+              placeholder={t('common.none_paren')}
             />
           </Field>
-          <Field label="Bot directory">
+          <Field label={t('settings.bot_directory')}>
             <Input
               value={draft.bot.dir}
               onChange={(e) => setDraft({ ...draft, bot: { ...draft.bot, dir: e.target.value } })}
@@ -236,20 +238,20 @@ export function Settings() {
       >
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>Unsaved changes</DialogTitle>
+            <DialogTitle>{t('settings.unsaved_title')}</DialogTitle>
             <DialogDescription>
-              You have unsaved settings changes. Save them before leaving, discard them, or stay on this page.
+              {t('settings.unsaved_desc')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="bg-transparent p-0 border-0 mx-0 mb-0">
             <Button variant="outline" size="sm" onClick={() => blocker.reset?.()} disabled={saving}>
-              Stay
+              {t('common.stay')}
             </Button>
             <Button variant="destructive" size="sm" onClick={discardAndLeave} disabled={saving}>
-              Discard
+              {t('common.discard')}
             </Button>
             <Button size="sm" onClick={saveAndLeave} disabled={saving}>
-              {saving ? 'Saving…' : 'Save & leave'}
+              {saving ? t('common.saving') : t('settings.save_and_leave')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -278,29 +280,31 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
 }
 
 function SidebarHoverField() {
+  const { t } = useTranslation()
   const isHoverOpen = useSidebar((s) => s.settings.isHoverOpen)
   const disabled = useSidebar((s) => s.settings.disabled)
   const setSettings = useSidebar((s) => s.setSettings)
   return (
     <div className="grid gap-1.5">
       <Toggle
-        label="Sidebar peek on hover"
+        label={t('settings.appearance_sidebar_peek')}
         value={isHoverOpen}
         onChange={(v) => setSettings({ isHoverOpen: v })}
       />
       <Toggle
-        label="Hide sidebar"
+        label={t('settings.appearance_hide_sidebar')}
         value={disabled}
         onChange={(v) => setSettings({ disabled: v })}
       />
       <span className="text-xs text-muted-foreground">
-        When the sidebar is collapsed, peek-on-hover expands it temporarily without pinning it open.
+        {t('settings.appearance_sidebar_hint')}
       </span>
     </div>
   )
 }
 
 function UiScaleField() {
+  const { t } = useTranslation()
   const scale = useUiPrefsStore((s) => s.scale)
   const setScale = useUiPrefsStore((s) => s.setScale)
   const resetScale = useUiPrefsStore((s) => s.resetScale)
@@ -308,7 +312,7 @@ function UiScaleField() {
   return (
     <div className="grid gap-1.5">
       <div className="flex items-center justify-between">
-        <Label>UI Scale</Label>
+        <Label>{t('settings.ui_scale')}</Label>
         <div className="flex items-center gap-2">
           <span className="font-mono text-sm tabular-nums w-12 text-right">{pct}%</span>
           <Button
@@ -317,7 +321,7 @@ function UiScaleField() {
             onClick={resetScale}
             disabled={scale === SCALE_DEFAULT}
           >
-            Reset
+            {t('common.reset')}
           </Button>
         </div>
       </div>
@@ -329,10 +333,10 @@ function UiScaleField() {
         value={scale}
         onChange={(e) => setScale(parseFloat(e.target.value))}
         className="w-full accent-primary"
-        aria-label="UI Scale"
+        aria-label={t('settings.ui_scale')}
       />
       <span className="text-xs text-muted-foreground">
-        Scales typography, spacing, and controls across the app. Saved locally.
+        {t('settings.ui_scale_hint')}
       </span>
     </div>
   )
@@ -345,6 +349,7 @@ function PlatformCard({
   draft: AppConfig
   setDraft: (c: AppConfig) => void
 }) {
+  const { t } = useTranslation()
   const current = draft.platform.kind
   const setKind = (kind: PlatformKind) => {
     if (kind === current) return
@@ -369,12 +374,12 @@ function PlatformCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Platform</CardTitle>
+        <CardTitle>{t('settings.platform_card_title')}</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4">
         <Field
-          label="Game"
-          hint="Selects which bridge parses the WebSocket protocol. Saving triggers a capture restart so the new bridge picks up the next session."
+          label={t('settings.platform_game_label')}
+          hint={t('settings.platform_game_hint')}
         >
           <Select value={current} onValueChange={(v) => setKind(v as PlatformKind)}>
             <SelectTrigger className="w-full">
@@ -383,13 +388,13 @@ function PlatformCard({
             <SelectContent>
               {PLATFORMS.map((p) => (
                 <SelectItem key={p.kind} value={p.kind}>
-                  {p.label}
+                  {t(p.labelKey)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </Field>
-        <p className="text-xs text-muted-foreground">{info.description}</p>
+        <p className="text-xs text-muted-foreground">{t(info.descriptionKey)}</p>
       </CardContent>
     </Card>
   )
@@ -402,6 +407,7 @@ function CaptureCard({
   draft: AppConfig
   setDraft: (c: AppConfig) => void
 }) {
+  const { t } = useTranslation()
   const mode: CaptureMode = draft.capture?.mode ?? 'mitm'
   const chromium = draft.capture?.chromium ?? {
     executable: '',
@@ -453,19 +459,19 @@ function CaptureCard({
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
-          <CardTitle>Capture</CardTitle>
+          <CardTitle>{t('settings.capture_card_title')}</CardTitle>
           <CaptureStatusBar />
         </div>
       </CardHeader>
       <CardContent className="grid gap-4">
-        <Field label="Mode" hint="MITM proxy needs CA cert + system proxy. Chromium launches a controlled browser — no setup.">
+        <Field label={t('settings.capture_mode_label')} hint={t('settings.capture_mode_hint')}>
           <Select value={mode} onValueChange={(v) => setMode(v as CaptureMode)}>
             <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="mitm">MITM proxy</SelectItem>
-              <SelectItem value="chromium">Chromium browser (experimental)</SelectItem>
+              <SelectItem value="mitm">{t('settings.capture_mitm_option')}</SelectItem>
+              <SelectItem value="chromium">{t('settings.capture_chromium_option')}</SelectItem>
             </SelectContent>
           </Select>
         </Field>
@@ -473,18 +479,18 @@ function CaptureCard({
         {mode === 'mitm' && (
           <>
             <Toggle
-              label="Proxy enabled"
+              label={t('settings.proxy_enabled')}
               value={draft.proxy.enabled}
               onChange={(v) => setDraft({ ...draft, proxy: { ...draft.proxy, enabled: v } })}
             />
-            <Field label="Address">
+            <Field label={t('settings.address')}>
               <Input
                 value={draft.proxy.addr}
                 onChange={(e) => setDraft({ ...draft, proxy: { ...draft.proxy, addr: e.target.value } })}
                 placeholder="127.0.0.1:23410"
               />
             </Field>
-            <Field label="CA directory" hint="Where root certificate / keys are written.">
+            <Field label={t('settings.ca_dir')} hint={t('settings.ca_dir_hint')}>
               <Input
                 value={draft.proxy.ca_dir}
                 onChange={(e) => setDraft({ ...draft, proxy: { ...draft.proxy, ca_dir: e.target.value } })}
@@ -495,7 +501,7 @@ function CaptureCard({
 
         {mode === 'chromium' && (
           <>
-            <Field label="Browser executable" hint="Leave blank to auto-detect.">
+            <Field label={t('settings.browser_executable')} hint={t('settings.browser_executable_hint')}>
               <Input
                 value={chromium.executable}
                 onChange={(e) => setChromium({ executable: e.target.value })}
@@ -505,27 +511,30 @@ function CaptureCard({
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">
                 {detecting
-                  ? 'Detecting…'
+                  ? t('common.detecting')
                   : detected === null
-                    ? 'Click Detect to scan for installed browsers.'
+                    ? t('settings.detect_status_initial')
                     : detected.length === 0
-                      ? 'No Chromium-family browser detected.'
-                      : `Detected: ${detected.map((d) => d.path).join(', ')}`}
+                      ? t('settings.detect_status_none')
+                      : t('settings.detect_status_detected', { paths: detected.map((d) => d.path).join(', ') })}
               </span>
               <Button variant="outline" size="sm" onClick={probe} disabled={detecting}>
-                {detecting ? 'Detecting…' : 'Detect'}
+                {detecting ? t('common.detecting') : t('common.detect')}
               </Button>
             </div>
-            <Field label="User data dir" hint="Leave blank to use the default Akagi profile under your config dir.">
+            <Field label={t('settings.user_data_dir')} hint={t('settings.user_data_dir_hint')}>
               <Input
                 value={chromium.user_data_dir}
                 onChange={(e) => setChromium({ user_data_dir: e.target.value })}
-                placeholder="(default)"
+                placeholder={t('common.default')}
               />
             </Field>
             <Field
-              label="Start URL"
-              hint={`Default for ${platformInfo(draft.platform.kind).label}: ${platformInfo(draft.platform.kind).defaultStartUrl}`}
+              label={t('settings.start_url')}
+              hint={t('settings.start_url_hint', {
+                platform: t(platformInfo(draft.platform.kind).labelKey),
+                url: platformInfo(draft.platform.kind).defaultStartUrl,
+              })}
             >
               <Input
                 value={chromium.start_url}
@@ -534,7 +543,7 @@ function CaptureCard({
               />
             </Field>
             <Toggle
-              label="Force Chrome for Testing"
+              label={t('settings.force_cft')}
               value={chromium.force_cft}
               onChange={(v) => setChromium({ force_cft: v })}
             />
@@ -554,6 +563,7 @@ const CAPTURE_DOT: Record<string, string> = {
 }
 
 function CaptureStatusBar() {
+  const { t } = useTranslation()
   const status = useCaptureStore((s) => s.status)
   const [busy, setBusy] = useState(false)
 
@@ -588,7 +598,7 @@ function CaptureStatusBar() {
         )}
       </div>
       <Button variant="outline" size="sm" onClick={restart} disabled={busy}>
-        {busy ? 'Restarting…' : 'Restart capture'}
+        {busy ? t('settings.restarting') : t('settings.restart_capture')}
       </Button>
     </div>
   )
@@ -601,6 +611,7 @@ function CftPanel({
   chromium: AppConfig['capture']['chromium']
   setChromium: (patch: Partial<AppConfig['capture']['chromium']>) => void
 }) {
+  const { t } = useTranslation()
   const [installed, setInstalled] = useState<string[] | null>(null)
   const [busy, setBusy] = useState<'idle' | 'downloading' | 'removing'>('idle')
 
@@ -646,16 +657,16 @@ function CftPanel({
   return (
     <div className="grid gap-2 rounded-md border border-border/50 p-3">
       <div className="flex items-center justify-between">
-        <Label>Chrome for Testing</Label>
+        <Label>{t('settings.cft_title')}</Label>
         <span className="text-xs text-muted-foreground">
           {installed === null
-            ? 'Loading…'
+            ? t('settings.cft_status_loading')
             : installed.length === 0
-              ? 'None installed'
-              : `${installed.length} installed`}
+              ? t('settings.cft_status_none')
+              : t('settings.cft_status_count', { count: installed.length })}
         </span>
       </div>
-      <Field label="Channel / version" hint='"stable" / "beta" / "dev" / "canary" or a literal version like "131.0.6778.85".'>
+      <Field label={t('settings.cft_channel')} hint={t('settings.cft_channel_hint')}>
         <Input
           value={chromium.cft_channel}
           onChange={(e) => setChromium({ cft_channel: e.target.value })}
@@ -664,10 +675,10 @@ function CftPanel({
       </Field>
       <div className="flex items-center justify-end gap-2">
         <Button variant="outline" size="sm" onClick={refresh} disabled={busy !== 'idle'}>
-          Refresh
+          {t('common.refresh')}
         </Button>
         <Button onClick={download} disabled={busy !== 'idle'} size="sm">
-          {busy === 'downloading' ? 'Downloading…' : 'Download'}
+          {busy === 'downloading' ? t('common.downloading') : t('common.download')}
         </Button>
       </div>
       {installed && installed.length > 0 && (
@@ -681,7 +692,7 @@ function CftPanel({
                 onClick={() => remove(v)}
                 disabled={busy !== 'idle'}
               >
-                Remove
+                {t('common.remove')}
               </Button>
             </li>
           ))}

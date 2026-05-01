@@ -1,4 +1,5 @@
 import { useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { TileFrame } from '@/components/TileFrame'
 import { Mahgen } from '@/components/Mahgen'
 import { useNotifyStore } from '@/stores/notifyStore'
@@ -29,8 +30,8 @@ type Variant = {
   color: string | null
   /** Tint for the left calligraphy glyph (a black-on-transparent PNG). Dahai = white. */
   glyphColor: string
-  labelEn: string
-  labelZh: string
+  /** i18n key for the action label (under `mahjong.*`). */
+  labelKey: string
   /** Pre-formatted info text. For hora this stays empty here — the score
    *  hook fills it in once the backend returns. */
   extra: string
@@ -40,15 +41,14 @@ type Variant = {
 
 // Action colours mirror reference/Akagi/akagi/client.tcss so the HUD matches
 // the original Akagi TUI palette. Applied as a faint translucent fill.
-function describe(r: BotResponse): Variant | null {
+function describe(r: BotResponse, t: (k: string, opts?: Record<string, unknown>) => string): Variant | null {
   switch (r.type) {
     case 'dahai':
       return {
         glyph: dahaiGlyph,
         color: null,
         glyphColor: '#ffffff',
-        labelEn: 'Dahai',
-        labelZh: '打牌',
+        labelKey: 'mahjong.dahai',
         extra: '',
         mahgen: mjaiToMahgen([r.pai]),
       }
@@ -57,8 +57,7 @@ function describe(r: BotResponse): Variant | null {
         glyph: chiGlyph,
         color: '#00ff80',
         glyphColor: '#00ff80',
-        labelEn: 'Chi',
-        labelZh: '吃',
+        labelKey: 'mahjong.chi',
         extra: `${r.pai}|${r.consumed.join('')}`,
         mahgen: `${mjaiToMahgen([r.pai])}|${mjaiToMahgen([...r.consumed])}`,
       }
@@ -67,8 +66,7 @@ function describe(r: BotResponse): Variant | null {
         glyph: ponGlyph,
         color: '#007fff',
         glyphColor: '#39a8ff',
-        labelEn: 'Pon',
-        labelZh: '碰',
+        labelKey: 'mahjong.pon',
         extra: r.pai,
         mahgen: mjaiToMahgen([r.pai]),
       }
@@ -77,8 +75,7 @@ function describe(r: BotResponse): Variant | null {
         glyph: kanGlyph,
         color: '#9a1cbd',
         glyphColor: '#c859e6',
-        labelEn: 'Daiminkan',
-        labelZh: '大明槓',
+        labelKey: 'mahjong.daiminkan',
         extra: r.pai,
         mahgen: mjaiToMahgen([r.pai]),
       }
@@ -87,8 +84,7 @@ function describe(r: BotResponse): Variant | null {
         glyph: kanGlyph,
         color: '#9a1cbd',
         glyphColor: '#c859e6',
-        labelEn: 'Kakan',
-        labelZh: '加槓',
+        labelKey: 'mahjong.kakan',
         extra: r.pai,
         mahgen: mjaiToMahgen([r.pai]),
       }
@@ -97,8 +93,7 @@ function describe(r: BotResponse): Variant | null {
         glyph: kanGlyph,
         color: '#9a1cbd',
         glyphColor: '#c859e6',
-        labelEn: 'Ankan',
-        labelZh: '暗槓',
+        labelKey: 'mahjong.ankan',
         extra: r.consumed[0],
         mahgen: mjaiToMahgen([r.consumed[0]]),
       }
@@ -109,8 +104,7 @@ function describe(r: BotResponse): Variant | null {
         glyph: reachGlyph,
         color: '#e06c20',
         glyphColor: '#e06c20',
-        labelEn: 'Reach',
-        labelZh: '立直',
+        labelKey: 'mahjong.reach',
         extra: '',
         mahgen: '',
       }
@@ -120,8 +114,7 @@ function describe(r: BotResponse): Variant | null {
             glyph: tsumoGlyph,
             color: '#ff1493',
             glyphColor: '#ff1493',
-            labelEn: 'Tsumo',
-            labelZh: '自摸',
+            labelKey: 'mahjong.tsumo',
             extra: '',
             mahgen: '',
           }
@@ -129,8 +122,7 @@ function describe(r: BotResponse): Variant | null {
             glyph: ronGlyph,
             color: '#c13535',
             glyphColor: '#e05050',
-            labelEn: 'Ron',
-            labelZh: '榮和',
+            labelKey: 'mahjong.ron',
             extra: '',
             mahgen: '',
           }
@@ -139,9 +131,8 @@ function describe(r: BotResponse): Variant | null {
         glyph: ryukyokuGlyph,
         color: '#8574a1',
         glyphColor: '#bab1ca',
-        labelEn: 'Ryukyoku',
-        labelZh: '流局',
-        extra: '九種九牌',
+        labelKey: 'mahjong.ryukyoku',
+        extra: t('mahjong.kyuushukyuuhai'),
         mahgen: '',
       }
     case 'kita':
@@ -149,9 +140,8 @@ function describe(r: BotResponse): Variant | null {
         glyph: kitaGlyph,
         color: '#d5508d',
         glyphColor: '#e9a2c3',
-        labelEn: 'Kita',
-        labelZh: '拔北',
-        extra: '拔北',
+        labelKey: 'mahjong.kita',
+        extra: t('mahjong.kita'),
         mahgen: 'N',
       }
     case 'none':
@@ -159,9 +149,8 @@ function describe(r: BotResponse): Variant | null {
         glyph: noneGlyph,
         color: '#a0a0a0',
         glyphColor: '#d3d3d3',
-        labelEn: 'None',
-        labelZh: '跳過',
-        extra: '跳過',
+        labelKey: 'mahjong.none',
+        extra: t('mahjong.skip'),
         mahgen: '',
       }
     default:
@@ -179,12 +168,13 @@ function hexToRgba(hex: string | null, alpha: number): string | undefined {
 }
 
 export function BotActionTile({ bp }: { bp: Breakpoint }) {
+  const { t } = useTranslation()
   const responses = useNotifyStore((s) => s.responses)
   const latest = useMemo(
     () => [...responses].reverse().find((r) => DECISION_TYPES.has(r.type)),
     [responses],
   )
-  const variant = latest ? describe(latest) : null
+  const variant = latest ? describe(latest, t) : null
   // Mahgen sizes off this ref (the full BotActionTile content row), so the
   // tile rescales when the user resizes the grid item rather than being
   // capped by the narrow right column.
@@ -208,7 +198,7 @@ export function BotActionTile({ bp }: { bp: Breakpoint }) {
   let mahgen = variant?.mahgen ?? ''
   if (isHora && variant) {
     if (score) {
-      extra = `+${score.points.toLocaleString()}點`
+      extra = t('mahjong.points_value', { points: score.points.toLocaleString() })
       mahgen = mjaiToMahgen([score.win_tile])
     } else {
       // While the IPC is in flight or returned None, leave info blank so
@@ -250,7 +240,7 @@ export function BotActionTile({ bp }: { bp: Breakpoint }) {
     : undefined
 
   return (
-    <TileFrame id="bot-action" title="Bot Action" bp={bp} contentClassName="p-0">
+    <TileFrame id="bot-action" title={t('tile.bot_action')} bp={bp} contentClassName="p-0">
       <div
         ref={rowRef}
         className="flex h-full items-stretch gap-3 px-3 py-2 transition-colors"
@@ -262,7 +252,7 @@ export function BotActionTile({ bp }: { bp: Breakpoint }) {
               <div className="w-full h-full" style={glyphFilter}>
                 <div
                   role="img"
-                  aria-label={variant.labelZh}
+                  aria-label={t(variant.labelKey)}
                   className="w-full h-full"
                   style={glyphMask}
                 />
@@ -270,7 +260,7 @@ export function BotActionTile({ bp }: { bp: Breakpoint }) {
             </div>
             <div className="flex flex-1 flex-col justify-center min-w-0">
               <div className="text-base font-semibold text-foreground truncate">
-                {variant.labelEn} <span className="text-muted-foreground">({variant.labelZh})</span>
+                {t(variant.labelKey)}
               </div>
               {extra && (
                 <div className="text-sm font-medium tabular-nums text-foreground/90 truncate">
@@ -285,7 +275,7 @@ export function BotActionTile({ bp }: { bp: Breakpoint }) {
             )}
           </>
         ) : (
-          <span className="self-center text-muted-foreground px-1">No action yet.</span>
+          <span className="self-center text-muted-foreground px-1">{t('tile.bot_action_empty')}</span>
         )}
       </div>
     </TileFrame>

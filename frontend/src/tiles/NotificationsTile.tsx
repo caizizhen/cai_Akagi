@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { TileFrame } from '@/components/TileFrame'
 import { Button } from '@/components/ui/button'
 import { useNotifyStore } from '@/stores/notifyStore'
@@ -12,6 +13,7 @@ const LEVEL_COLOR: Record<string, string> = {
 }
 
 export function NotificationsTile({ bp }: { bp: Breakpoint }) {
+  const { t } = useTranslation()
   const notifications = useNotifyStore((s) => s.notifications)
   const clear = useNotifyStore((s) => s.clearToasts)
   const recent = notifications.slice().reverse()
@@ -19,7 +21,7 @@ export function NotificationsTile({ bp }: { bp: Breakpoint }) {
   return (
     <TileFrame
       id="notifications"
-      title="Notifications"
+      title={t('tile.notifications')}
       bp={bp}
       rightSlot={
         <Button
@@ -29,14 +31,14 @@ export function NotificationsTile({ bp }: { bp: Breakpoint }) {
           onPointerDown={(e) => e.stopPropagation()}
           onClick={clear}
         >
-          Clear
+          {t('common.clear')}
         </Button>
       }
       contentClassName="p-0"
     >
       <ul className="flex flex-col text-xs divide-y divide-border">
         {recent.length === 0 ? (
-          <li className="px-3 py-2 text-muted-foreground">Quiet for now.</li>
+          <li className="px-3 py-2 text-muted-foreground">{t('tile.notifications_empty')}</li>
         ) : recent.map((n) => (
           <li key={n._seq} className="px-3 py-1.5">
             <div className="flex items-center gap-2">

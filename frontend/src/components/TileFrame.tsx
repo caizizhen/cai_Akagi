@@ -1,4 +1,5 @@
 import { type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -17,6 +18,7 @@ type Props = {
 }
 
 export function TileFrame({ id, title, bp, rightSlot, children, closable = true, contentClassName }: Props) {
+  const { t } = useTranslation()
   const hide = useLayoutStore((s) => s.hide)
   return (
     <Card className="h-full overflow-hidden flex flex-col gap-0 py-0">
@@ -33,7 +35,7 @@ export function TileFrame({ id, title, bp, rightSlot, children, closable = true,
               className="h-6 w-6"
               onPointerDown={(e) => e.stopPropagation()}
               onClick={() => hide(id, bp)}
-              aria-label={`Hide ${title}`}
+              aria-label={t('tile.hide_x', { title })}
             >
               <X className="h-3.5 w-3.5" />
             </Button>

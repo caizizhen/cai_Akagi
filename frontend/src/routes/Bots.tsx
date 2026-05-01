@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Plus, Settings as SettingsIcon, RefreshCw, CheckCircle2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,6 +35,7 @@ import type { AppConfig, BotInfo, BotSettings } from '@/types'
 import { ManifestField } from '@/components/ManifestField'
 
 export function Bots() {
+  const { t } = useTranslation()
   const list = useBotStore((s) => s.list)
   const setList = useBotStore((s) => s.setList)
   const config = useConfigStore((s) => s.config)
@@ -89,11 +91,11 @@ export function Bots() {
   return (
     <div className="p-6 flex flex-col gap-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Bots</h1>
+        <h1 className="text-2xl font-semibold">{t('bots.title')}</h1>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={refresh} disabled={loading} className="gap-1.5">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            {t('common.refresh')}
           </Button>
           <InstallFromGithubDialog onInstalled={refresh} />
         </div>
@@ -102,19 +104,19 @@ export function Bots() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Version</TableHead>
-            <TableHead>Manifest</TableHead>
-            <TableHead>4p</TableHead>
-            <TableHead>3p</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead>{t('bots.table_name')}</TableHead>
+            <TableHead>{t('bots.table_version')}</TableHead>
+            <TableHead>{t('bots.table_manifest')}</TableHead>
+            <TableHead>{t('bots.table_4p')}</TableHead>
+            <TableHead>{t('bots.table_3p')}</TableHead>
+            <TableHead className="text-right">{t('bots.table_actions')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {list.length === 0 ? (
             <TableRow>
               <TableCell colSpan={6} className="text-center text-muted-foreground">
-                {loading ? 'Loading…' : 'No bots installed.'}
+                {loading ? t('bots.loading') : t('bots.empty')}
               </TableCell>
             </TableRow>
           ) : list.map((bot) => {
@@ -155,14 +157,14 @@ export function Bots() {
                       className="gap-1.5"
                     >
                       <SettingsIcon className="h-4 w-4" />
-                      Configure
+                      {t('bots.configure_btn')}
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
                       onClick={() => setDeleting(bot.name)}
                       disabled={isActive}
-                      title={isActive ? 'Switch active bot first' : 'Delete'}
+                      title={isActive ? t('bots.delete_tooltip_active') : t('common.delete')}
                       className="gap-1.5 text-red-400 hover:text-red-400"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -201,6 +203,7 @@ function DeleteBotDialog({
   onClose: () => void
   onDeleted: () => void
 }) {
+  const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -222,18 +225,18 @@ function DeleteBotDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete bot {name}?</DialogTitle>
+          <DialogTitle>{t('bots.delete_title', { name })}</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
-          This permanently removes <span className="font-mono">{name}</span> from
-          the bots directory, including its installed files, virtualenv, and
-          settings. This action cannot be undone.
+          {t('bots.delete_desc_pre')}
+          <span className="font-mono">{name}</span>
+          {t('bots.delete_desc_post')}
         </p>
         {err && <span className="text-sm text-red-400">{err}</span>}
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="destructive" onClick={submit} disabled={busy}>
-            {busy ? 'Deleting…' : 'Delete'}
+            {busy ? t('common.deleting') : t('common.delete')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -242,6 +245,7 @@ function DeleteBotDialog({
 }
 
 function InstallFromGithubDialog({ onInstalled }: { onInstalled: () => void }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [repo, setRepo] = useState('')
   const [name, setName] = useState('')
@@ -275,32 +279,35 @@ function InstallFromGithubDialog({ onInstalled }: { onInstalled: () => void }) {
       <DialogTrigger asChild>
         <Button size="sm" className="gap-1.5">
           <Plus className="h-4 w-4" />
-          Install from GitHub
+          {t('bots.install_btn')}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Install bot from GitHub release</DialogTitle>
+          <DialogTitle>{t('bots.install_title')}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-2">
           <div className="grid gap-1.5">
-            <Label>Repo</Label>
+            <Label>{t('bots.install_repo')}</Label>
             <Input
               value={repo}
               onChange={(e) => setRepo(e.target.value)}
-              placeholder="user/mortal-bot"
+              placeholder={t('bots.install_repo_placeholder')}
             />
             <span className="text-xs text-muted-foreground">
-              Accepts <span className="font-mono">owner/name</span> or a full
-              GitHub URL (<span className="font-mono">https://github.com/owner/name</span>).
+              {t('bots.install_repo_hint_pre')}
+              <span className="font-mono">owner/name</span>
+              {t('bots.install_repo_hint_mid')}
+              <span className="font-mono">https://github.com/owner/name</span>
+              {t('bots.install_repo_hint_post')}
             </span>
           </div>
           <div className="grid gap-1.5">
-            <Label>Asset glob (optional)</Label>
+            <Label>{t('bots.install_glob')}</Label>
             <Input value={glob} onChange={(e) => setGlob(e.target.value)} placeholder="*-linux.zip" />
           </div>
           <div className="grid gap-1.5">
-            <Label>Local name (optional, defaults to repo name)</Label>
+            <Label>{t('bots.install_local_name')}</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="mortal" />
           </div>
           {err && (
@@ -308,9 +315,9 @@ function InstallFromGithubDialog({ onInstalled }: { onInstalled: () => void }) {
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
           <Button onClick={submit} disabled={busy || !repo}>
-            {busy ? 'Installing…' : 'Install'}
+            {busy ? t('common.installing') : t('common.install')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -319,6 +326,7 @@ function InstallFromGithubDialog({ onInstalled }: { onInstalled: () => void }) {
 }
 
 function BotSettingsDrawer({ name, open, onOpenChange }: { name: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t } = useTranslation()
   const [data, setData] = useState<BotSettings | null>(null)
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [saving, setSaving] = useState(false)
@@ -369,7 +377,7 @@ function BotSettingsDrawer({ name, open, onOpenChange }: { name: string; open: b
         </SheetHeader>
 
         {!data ? (
-          <div className="text-muted-foreground text-sm">Loading…</div>
+          <div className="text-muted-foreground text-sm">{t('bots.drawer_loading')}</div>
         ) : (
           <div className="grid gap-4">
             {Object.entries(data.manifest.settings).map(([key, spec]) => (
@@ -391,14 +399,14 @@ function BotSettingsDrawer({ name, open, onOpenChange }: { name: string; open: b
             variant="outline"
             onClick={reinstallEnv}
             disabled={saving || resyncing}
-            title="Wipe and recreate the Python virtualenv for this bot"
+            title={t('bots.drawer_reinstall_tooltip')}
           >
-            {resyncing ? 'Reinstalling…' : 'Reinstall environment'}
+            {resyncing ? t('bots.drawer_reinstalling') : t('bots.drawer_reinstall')}
           </Button>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
             <Button onClick={save} disabled={saving || resyncing || !data}>
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? t('common.saving') : t('common.save')}
             </Button>
           </div>
         </div>

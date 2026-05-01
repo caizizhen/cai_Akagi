@@ -8,10 +8,10 @@ import type { PlatformKind } from '@/types'
 
 export type PlatformInfo = {
   kind: PlatformKind
-  /** Display name shown in pickers. */
-  label: string
-  /** One-line summary shown beside the picker. */
-  description: string
+  /** i18n key resolving to the localised platform name. */
+  labelKey: string
+  /** i18n key resolving to the one-line localised summary shown beside the picker. */
+  descriptionKey: string
   /**
    * Default URL for the Chromium capture backend's `start_url` when this
    * platform is active. Picked so the launched browser lands directly on
@@ -23,14 +23,14 @@ export type PlatformInfo = {
 export const PLATFORMS: PlatformInfo[] = [
   {
     kind: 'Majsoul',
-    label: 'Mahjong Soul',
-    description: 'game.maj-soul.com — yonma + sanma, ranked + friend rooms.',
+    labelKey: 'platform.majsoul',
+    descriptionKey: 'platform.majsoul_desc',
     defaultStartUrl: 'https://game.maj-soul.com/1/',
   },
   {
     kind: 'Tenhou',
-    label: 'Tenhou',
-    description: 'tenhou.net — yonma + sanma',
+    labelKey: 'platform.tenhou',
+    descriptionKey: 'platform.tenhou_desc',
     defaultStartUrl: 'https://tenhou.net/4/',
   },
 ]

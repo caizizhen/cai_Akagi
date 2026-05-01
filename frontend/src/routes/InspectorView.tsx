@@ -51,14 +51,14 @@ function entryHasActor(e: InspectorEntry, actor: number): boolean {
 
 /// Hex+ASCII dump of base64 bytes for the WS frame detail panel. Capped
 /// at 512 bytes — anything bigger is unreadable in a side panel anyway.
-function hexDump(b64: string): string {
+function hexDump(b64: string, t: (k: string, opts?: Record<string, unknown>) => string): string {
   let bytes: Uint8Array
   try {
     const bin = atob(b64)
     bytes = new Uint8Array(bin.length)
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
   } catch {
-    return '(invalid base64)'
+    return t('inspector.invalid_base64')
   }
   const truncated = bytes.length > 512
   const view = bytes.slice(0, 512)
@@ -74,7 +74,7 @@ function hexDump(b64: string): string {
       .join('')
     lines.push(`${off.toString(16).padStart(6, '0')}  ${hex}  ${ascii}`)
   }
-  if (truncated) lines.push(`… ${bytes.length - 512} more bytes truncated`)
+  if (truncated) lines.push(t('inspector.bytes_truncated', { count: bytes.length - 512 }))
   return lines.join('\n')
 }
 
@@ -296,6 +296,7 @@ function KindRowBadge({ kind }: { kind: InspectorKind }) {
 }
 
 function RowSummary({ entry }: { entry: InspectorEntry }) {
+  const { t } = useTranslation()
   if (entry.kind === 'ws_frame') {
     const arrow =
       entry.direction === 'down' ? <ArrowDown className="h-3 w-3 inline" /> : <ArrowUp className="h-3 w-3 inline" />
@@ -304,7 +305,7 @@ function RowSummary({ entry }: { entry: InspectorEntry }) {
         ? entry.parsed.method
         : entry.raw.format === 'text'
           ? entry.raw.data.slice(0, 80)
-          : '(binary)'
+          : t('inspector.binary')
     return (
       <span className="flex-1 break-all whitespace-pre-wrap">
         <span className="text-muted-foreground">
@@ -375,7 +376,7 @@ function DetailPanel({ entry }: { entry: InspectorEntry }) {
             {entry.raw.format === 'text' ? t('inspector.detail_raw_text') : t('inspector.detail_raw_hex')}
           </div>
           <pre className="font-mono whitespace-pre-wrap break-all bg-muted/40 rounded p-2 text-[11px]">
-            {entry.raw.format === 'text' ? entry.raw.data : hexDump(entry.raw.data)}
+            {entry.raw.format === 'text' ? entry.raw.data : hexDump(entry.raw.data, t)}
           </pre>
         </div>
       </>

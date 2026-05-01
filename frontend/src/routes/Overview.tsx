@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Bot, Shield, ScrollText, Gamepad2, Settings as SettingsIcon } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -19,25 +20,26 @@ const DOT: Record<string, string> = {
 }
 
 export function Overview() {
+  const { t } = useTranslation()
   const bot = useBotStore((s) => s.status)
   const capture = useCaptureStore((s) => s.status)
   const logDir = useConfigStore((s) => s.logDir)
   const lastAnalysis = useAnalysisStore((s) => s.updatedAt)
 
-  const captureTitle = 'kind' in capture && capture.kind === 'chromium' ? 'Capture (Chromium)' : 'Capture (MITM)'
+  const captureTitle = 'kind' in capture && capture.kind === 'chromium' ? t('overview.capture_chromium') : t('overview.capture_mitm')
   const captureDetail = 'descriptor' in capture && capture.descriptor ? capture.descriptor : '—'
 
   return (
     <div className="p-6 flex flex-col gap-6 w-full">
       <header>
-        <h1 className="text-2xl font-semibold">Overview</h1>
-        <p className="text-sm text-muted-foreground">Live status of bot, capture, and the active log session.</p>
+        <h1 className="text-2xl font-semibold">{t('overview.title')}</h1>
+        <p className="text-sm text-muted-foreground">{t('overview.description')}</p>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatusCard
           icon={Bot}
-          title="Bot"
+          title={t('overview.bot_card_title')}
           state={bot.state}
           detail={'bot' in bot && bot.bot ? bot.bot : '—'}
           extra={'actor_id' in bot ? `actor_id ${bot.actor_id}` : 'error' in bot ? bot.error : undefined}
@@ -52,7 +54,7 @@ export function Overview() {
         <Card>
           <CardHeader className="flex flex-row items-center gap-2">
             <ScrollText className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm uppercase tracking-wider">Log Session</CardTitle>
+            <CardTitle className="text-sm uppercase tracking-wider">{t('overview.log_session')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="font-mono text-xs break-all">{logDir || '—'}</div>
@@ -62,7 +64,7 @@ export function Overview() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm uppercase tracking-wider">Last analysis</CardTitle>
+          <CardTitle className="text-sm uppercase tracking-wider">{t('overview.last_analysis')}</CardTitle>
         </CardHeader>
         <CardContent>
           <span className="font-mono text-sm">
@@ -75,13 +77,13 @@ export function Overview() {
         <Button asChild>
           <Link to="/game" className="gap-1.5">
             <Gamepad2 className="h-4 w-4" />
-            Open Game Dashboard
+            {t('overview.open_dashboard')}
           </Link>
         </Button>
         <Button asChild variant="outline">
           <Link to="/settings" className="gap-1.5">
             <SettingsIcon className="h-4 w-4" />
-            Settings
+            {t('settings.title')}
           </Link>
         </Button>
       </div>

@@ -154,7 +154,7 @@ function FilterCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm uppercase tracking-wider">Filters</CardTitle>
+        <CardTitle className="text-sm uppercase tracking-wider">{t('history.filters_card_title')}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -173,10 +173,10 @@ function FilterCard({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ANY}>{t('history.filter.any')}</SelectItem>
-                <SelectItem value="majsoul">Majsoul</SelectItem>
-                <SelectItem value="tenhou">Tenhou</SelectItem>
-                <SelectItem value="riichi_city">Riichi City</SelectItem>
-                <SelectItem value="mjai">mjai</SelectItem>
+                <SelectItem value="majsoul">{t('platform.majsoul')}</SelectItem>
+                <SelectItem value="tenhou">{t('platform.tenhou')}</SelectItem>
+                <SelectItem value="riichi_city">{t('platform.riichi_city')}</SelectItem>
+                <SelectItem value="mjai">{t('platform.mjai')}</SelectItem>
               </SelectContent>
             </Select>
           </Field>
@@ -203,7 +203,7 @@ function FilterCard({
             </Select>
           </Field>
 
-          <Field label="Date">
+          <Field label={t('history.date_label')}>
             <div className="flex gap-1">
               <Input
                 type="date"

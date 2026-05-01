@@ -9,7 +9,7 @@ import { LANG_LABELS, SUPPORTED_LANGS, type SupportedLang } from '@/i18n'
 import { Menu } from './Menu'
 
 export function Sidebar() {
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation()
   const isOpen = useSidebar((s) => s.isOpen)
   const toggleOpen = useSidebar((s) => s.toggleOpen)
   const setIsHover = useSidebar((s) => s.setIsHover)
@@ -61,7 +61,7 @@ export function Sidebar() {
               size="icon"
               onClick={toggleOpen}
               className="h-7 w-7 text-muted-foreground hover:text-foreground"
-              aria-label={isOpen ? 'Collapse sidebar' : 'Pin sidebar'}
+              aria-label={isOpen ? t('sidebar.collapse') : t('sidebar.pin')}
             >
               <ChevronLeft
                 className={cn(

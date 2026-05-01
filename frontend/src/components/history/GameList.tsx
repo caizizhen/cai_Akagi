@@ -100,8 +100,8 @@ export function GameList({
                     <TableCell className="font-mono text-xs">
                       {new Date(r.started_at).toLocaleString()}
                     </TableCell>
-                    <TableCell className="capitalize">
-                      {r.platform.replace('_', ' ')}
+                    <TableCell>
+                      {t(`platform.${r.platform}`)}
                     </TableCell>
                     <TableCell>{modeLabel(r, t)}</TableCell>
                     <TableCell>{r.our_rank ?? '—'}</TableCell>

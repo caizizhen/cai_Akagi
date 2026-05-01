@@ -1,15 +1,17 @@
+import { useTranslation } from 'react-i18next'
 import { TileFrame } from '@/components/TileFrame'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { TILE_LABELS_34 } from '@/lib/tileIdx'
 import type { Breakpoint } from '@/tiles/defaults'
 
 export function RiskChartTile({ bp }: { bp: Breakpoint }) {
+  const { t } = useTranslation()
   const risk = useAnalysisStore((s) => s.result?.mixed_risk ?? null)
 
   return (
-    <TileFrame id="risk-chart" title="Mixed Deal-in Risk" bp={bp} contentClassName="flex flex-col gap-1.5">
+    <TileFrame id="risk-chart" title={t('tile.risk_chart')} bp={bp} contentClassName="flex flex-col gap-1.5">
       {!risk ? (
-        <span className="text-muted-foreground text-sm">Awaiting analysis.</span>
+        <span className="text-muted-foreground text-sm">{t('tile.risk_chart_empty')}</span>
       ) : (
         <div className="grid grid-cols-[auto_1fr_auto] gap-x-2 gap-y-0.5 text-[10px] font-mono">
           {risk.map((v, i) => (

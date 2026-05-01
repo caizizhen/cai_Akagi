@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,6 +18,7 @@ import { useTauriBridge } from '@/hooks/useTauriBridge'
 import { useConfigStore } from '@/stores/configStore'
 import { ManifestField } from '@/components/ManifestField'
 import { PLATFORMS, platformInfo } from '@/lib/platforms'
+import { LANG_LABELS, SUPPORTED_LANGS, type SupportedLang } from '@/i18n'
 import type { AppConfig, BotInfo, BotSettings, DetectedBrowser, PlatformKind } from '@/types'
 
 type Step = 'welcome' | 'platform' | 'mode' | 'config' | 'bots' | 'configure' | 'finish'
@@ -33,6 +35,7 @@ const BOT_4P_ASSET = 'release4p.zip'
 const BOT_3P_ASSET = 'release3p.zip'
 
 export function Setup() {
+  const { t } = useTranslation()
   // The wizard renders standalone (no <App> parent), so we wire the
   // tauri event bridge + toast surface here ourselves. Without this the
   // CfT download progress notifications wouldn't show up during setup.
@@ -66,7 +69,7 @@ export function Setup() {
   }, [stored, setStored])
 
   if (!draft) {
-    return <div className="p-6 text-muted-foreground">Loading…</div>
+    return <div className="p-6 text-muted-foreground">{t('setup.loading')}</div>
   }
 
   const idx = STEPS.indexOf(step)
@@ -152,8 +155,10 @@ export function Setup() {
       <Card className="w-full max-w-2xl">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Akagi Setup</CardTitle>
-            <span className="text-xs text-muted-foreground">Step {idx + 1} of {STEPS.length}</span>
+            <CardTitle>{t('setup.title')}</CardTitle>
+            <span className="text-xs text-muted-foreground">
+              {t('setup.step_progress', { current: idx + 1, total: STEPS.length })}
+            </span>
           </div>
           <Stepper current={idx} />
         </CardHeader>
@@ -180,19 +185,19 @@ export function Setup() {
           <div className="flex justify-between">
             <div className="flex gap-2">
               {canBack ? (
-                <Button variant="outline" onClick={back} disabled={busy}>Back</Button>
+                <Button variant="outline" onClick={back} disabled={busy}>{t('common.back')}</Button>
               ) : (
                 <span />
               )}
               {isRerun && (
-                <Button variant="ghost" onClick={cancel} disabled={busy}>Cancel</Button>
+                <Button variant="ghost" onClick={cancel} disabled={busy}>{t('common.cancel')}</Button>
               )}
             </div>
             {canNext ? (
-              <Button onClick={next} disabled={busy}>Next</Button>
+              <Button onClick={next} disabled={busy}>{t('common.next')}</Button>
             ) : (
               <Button onClick={finish} disabled={busy}>
-                {busy ? 'Saving…' : 'Finish'}
+                {busy ? t('common.saving') : t('common.finish')}
               </Button>
             )}
           </div>
@@ -222,6 +227,7 @@ function PlatformStep({
   draft: AppConfig
   setDraft: (c: AppConfig) => void
 }) {
+  const { t } = useTranslation()
   const current = draft.platform.kind
   // Switching platforms inside the first-run wizard always rewrites
   // chromium.start_url to the new platform's default — a user that's
@@ -247,17 +253,17 @@ function PlatformStep({
 
   return (
     <div className="grid gap-3">
-      <h2 className="text-lg font-semibold">Pick your platform</h2>
+      <h2 className="text-lg font-semibold">{t('setup.platform.title')}</h2>
       <p className="text-sm text-muted-foreground">
-        Akagi listens for one game's WebSocket protocol at a time. You can change this later in Settings.
+        {t('setup.platform.desc')}
       </p>
       {PLATFORMS.map((p) => (
         <ModeCard
           key={p.kind}
-          title={p.label}
+          title={t(p.labelKey)}
           active={current === p.kind}
           onClick={() => pick(p.kind)}
-          description={p.description}
+          description={t(p.descriptionKey)}
         />
       ))}
     </div>
@@ -265,18 +271,35 @@ function PlatformStep({
 }
 
 function WelcomeStep() {
+  const { t, i18n } = useTranslation()
   return (
     <div className="grid gap-3">
-      <h2 className="text-lg font-semibold">Welcome to Akagi</h2>
+      <div className="grid gap-1.5">
+        {/* Trilingual label so a user who can't read English/JP/CN still
+            recognises this as a language picker before changing it. */}
+        <Label className="text-xs">{t('setup.lang_label')}</Label>
+        <Select
+          value={i18n.language}
+          onValueChange={(v) => void i18n.changeLanguage(v)}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SUPPORTED_LANGS.map((lang) => (
+              <SelectItem key={lang} value={lang}>
+                {LANG_LABELS[lang as SupportedLang]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <h2 className="text-lg font-semibold mt-2">{t('setup.welcome.title')}</h2>
       <p className="text-sm text-muted-foreground">
-        Akagi watches your mahjong game traffic and runs an mjai-protocol bot
-        alongside it for realtime advice. Before the bot can do anything,
-        Akagi needs a way to capture the game's WebSocket traffic.
+        {t('setup.welcome.body1')}
       </p>
       <p className="text-sm text-muted-foreground">
-        On the next page you'll pick between the legacy MITM proxy (powerful
-        but requires CA-cert trust) and a controlled Chromium browser (no
-        proxy / certificate setup — Akagi launches its own browser window).
+        {t('setup.welcome.body2')}
       </p>
     </div>
   )
@@ -289,21 +312,22 @@ function ModeStep({
   draft: AppConfig
   setDraft: (c: AppConfig) => void
 }) {
+  const { t } = useTranslation()
   const mode = draft.capture.mode
   return (
     <div className="grid gap-3">
-      <h2 className="text-lg font-semibold">Pick a capture mode</h2>
+      <h2 className="text-lg font-semibold">{t('setup.mode.title')}</h2>
       <ModeCard
-        title="Chromium browser (recommended)"
+        title={t('setup.mode.chromium_title')}
         active={mode === 'chromium'}
         onClick={() => setDraft({ ...draft, capture: { ...draft.capture, mode: 'chromium' } })}
-        description="Akagi launches a controlled browser and intercepts WebSocket frames via Chrome DevTools Protocol. No system proxy. No CA cert. Works for Mahjong Soul and Tenhou; not for RiichiCity (no web client)."
+        description={t('setup.mode.chromium_desc')}
       />
       <ModeCard
-        title="MITM proxy (advanced)"
+        title={t('setup.mode.mitm_title')}
         active={mode === 'mitm'}
         onClick={() => setDraft({ ...draft, capture: { ...draft.capture, mode: 'mitm' } })}
-        description="hudsucker-based MITM. You configure your system proxy and trust Akagi's self-signed CA. Required for RiichiCity (no web client) and useful when you already have a browser session you don't want to disturb."
+        description={t('setup.mode.mitm_desc')}
       />
     </div>
   )
@@ -348,11 +372,12 @@ function ConfigStep({
   draft: AppConfig
   setDraft: (c: AppConfig) => void
 }) {
+  const { t } = useTranslation()
   if (draft.capture.mode === 'mitm') {
     return (
       <div className="grid gap-3">
-        <h2 className="text-lg font-semibold">MITM proxy settings</h2>
-        <Field label="Listen address">
+        <h2 className="text-lg font-semibold">{t('setup.mitm.title')}</h2>
+        <Field label={t('setup.mitm.listen')}>
           <Input
             value={draft.proxy.addr}
             onChange={(e) => setDraft({ ...draft, proxy: { ...draft.proxy, addr: e.target.value } })}
@@ -360,15 +385,15 @@ function ConfigStep({
           />
         </Field>
         <Field
-          label="CA directory"
-          hint={`The CA cert is generated on first start. Trust the .pem / .crt file in your OS or browser certificate store before pointing the game at this proxy.`}
+          label={t('settings.ca_dir')}
+          hint={t('setup.mitm.ca_dir_hint')}
         >
           <Input
             value={draft.proxy.ca_dir}
             onChange={(e) => setDraft({ ...draft, proxy: { ...draft.proxy, ca_dir: e.target.value } })}
           />
         </Field>
-        <Field label="Proxy enabled" hint="Master switch — leave on for Akagi to start the proxy automatically.">
+        <Field label={t('settings.proxy_enabled')} hint={t('setup.mitm.proxy_enabled_hint')}>
           <Select
             value={draft.proxy.enabled ? 'on' : 'off'}
             onValueChange={(v) => setDraft({ ...draft, proxy: { ...draft.proxy, enabled: v === 'on' } })}
@@ -377,8 +402,8 @@ function ConfigStep({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="on">On</SelectItem>
-              <SelectItem value="off">Off</SelectItem>
+              <SelectItem value="on">{t('common.on')}</SelectItem>
+              <SelectItem value="off">{t('common.off')}</SelectItem>
             </SelectContent>
           </Select>
         </Field>
@@ -395,6 +420,7 @@ function ChromiumConfigStep({
   draft: AppConfig
   setDraft: (c: AppConfig) => void
 }) {
+  const { t } = useTranslation()
   const chromium = draft.capture.chromium
   const setChromium = (patch: Partial<typeof chromium>) =>
     setDraft({
@@ -451,25 +477,25 @@ function ChromiumConfigStep({
 
   return (
     <div className="grid gap-3">
-      <h2 className="text-lg font-semibold">Chromium settings</h2>
-      <Field label="Browser executable" hint="Leave blank to auto-detect a system Chrome / Edge / Brave / Chromium.">
+      <h2 className="text-lg font-semibold">{t('setup.chromium.title')}</h2>
+      <Field label={t('settings.browser_executable')} hint={t('setup.chromium.exec_hint')}>
         <Input
           value={chromium.executable}
           onChange={(e) => setChromium({ executable: e.target.value })}
-          placeholder="(auto-detect)"
+          placeholder={t('common.auto_detect')}
         />
       </Field>
       <div className="rounded-md border border-border/50 p-3 grid gap-2">
         <div className="flex items-center justify-between">
-          <Label>Detected browsers</Label>
+          <Label>{t('setup.chromium.detected_label')}</Label>
           <Button variant="outline" size="sm" onClick={refresh} disabled={busy !== 'idle'}>
-            {busy === 'detecting' ? 'Scanning…' : 'Refresh'}
+            {busy === 'detecting' ? t('common.scanning') : t('common.refresh')}
           </Button>
         </div>
         {detected === null ? (
-          <span className="text-xs text-muted-foreground">Scanning…</span>
+          <span className="text-xs text-muted-foreground">{t('common.scanning')}</span>
         ) : detected.length === 0 ? (
-          <span className="text-xs text-muted-foreground">None detected on this system.</span>
+          <span className="text-xs text-muted-foreground">{t('setup.chromium.no_browser')}</span>
         ) : (
           <ul className="text-xs font-mono break-all">
             {detected.map((d) => (
@@ -480,12 +506,16 @@ function ChromiumConfigStep({
       </div>
       <div className="rounded-md border border-border/50 p-3 grid gap-2">
         <div className="flex items-center justify-between">
-          <Label>Chrome for Testing</Label>
+          <Label>{t('settings.cft_title')}</Label>
           <span className="text-xs text-muted-foreground">
-            {installed === null ? 'Loading…' : installed.length === 0 ? 'None installed' : `${installed.length} installed`}
+            {installed === null
+              ? t('settings.cft_status_loading')
+              : installed.length === 0
+                ? t('settings.cft_status_none')
+                : t('settings.cft_status_count', { count: installed.length })}
           </span>
         </div>
-        <Field label="Channel / version" hint='"stable" / "beta" / "dev" / "canary" or a literal version like "131.0.6778.85".'>
+        <Field label={t('settings.cft_channel')} hint={t('settings.cft_channel_hint')}>
           <Input
             value={chromium.cft_channel}
             onChange={(e) => setChromium({ cft_channel: e.target.value })}
@@ -493,12 +523,15 @@ function ChromiumConfigStep({
           />
         </Field>
         <Button onClick={downloadCft} disabled={busy !== 'idle'} size="sm">
-          {busy === 'downloading' ? 'Downloading…' : 'Download'}
+          {busy === 'downloading' ? t('common.downloading') : t('common.download')}
         </Button>
       </div>
       <Field
-        label="Start URL"
-        hint={`Default for ${platformInfo(draft.platform.kind).label}: ${platformInfo(draft.platform.kind).defaultStartUrl}`}
+        label={t('settings.start_url')}
+        hint={t('settings.start_url_hint', {
+          platform: t(platformInfo(draft.platform.kind).labelKey),
+          url: platformInfo(draft.platform.kind).defaultStartUrl,
+        })}
       >
         <Input
           value={chromium.start_url}
@@ -508,7 +541,7 @@ function ChromiumConfigStep({
       </Field>
       {!ready && (
         <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-          No browser is available yet. Either install Chrome / Edge / Brave / Chromium on your system, set an explicit executable above, or click Download to install Chrome for Testing.
+          {t('setup.chromium.warning_no_browser')}
         </div>
       )}
     </div>
@@ -516,6 +549,7 @@ function ChromiumConfigStep({
 }
 
 function BotsStep() {
+  const { t } = useTranslation()
   const [installed, setInstalled] = useState<BotInfo[] | null>(null)
   const [installing, setInstalling] = useState<'4p' | '3p' | null>(null)
   const [errors, setErrors] = useState<{ [k: string]: string }>({})
@@ -558,22 +592,17 @@ function BotsStep() {
 
   return (
     <div className="grid gap-3">
-      <h2 className="text-lg font-semibold">Install MJAI bots</h2>
+      <h2 className="text-lg font-semibold">{t('setup.bots.title')}</h2>
       <p className="text-sm text-muted-foreground">
-        An MJAI bot is required for game analysis — without one, Akagi only
-        captures traffic. The author publishes pre-built Mortal-based bots
-        for both 4-player and 3-player modes; install one or both here.
-        Skip this step if you'd rather build your own.
+        {t('setup.bots.desc')}
       </p>
       <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-        <b>License notice:</b> Akagi-MjaiBot-Mortal is distributed under{' '}
-        <span className="font-mono">AGPL-3.0</span>. By installing, you agree
-        to its terms — most importantly, distributing modified versions
-        requires releasing your modifications under AGPL-3.0 as well.
+        <b>{t('setup.bots.license_label')}</b>{' '}
+        {t('setup.bots.license_body', { license: 'AGPL-3.0' })}
       </div>
       <BotInstallCard
-        title="4-player (yonma) — mortal"
-        description="Mortal bot tuned for 4-player tables."
+        title={t('setup.bots.yonma_title')}
+        description={t('setup.bots.yonma_desc')}
         installed={has4p}
         installing={installing === '4p'}
         disabled={installing !== null}
@@ -581,8 +610,8 @@ function BotsStep() {
         onInstall={() => install('4p')}
       />
       <BotInstallCard
-        title="3-player (sanma) — mortal3p"
-        description="Mortal RL bot tuned for 3-player tables."
+        title={t('setup.bots.sanma_title')}
+        description={t('setup.bots.sanma_desc')}
         installed={has3p}
         installing={installing === '3p'}
         disabled={installing !== null}
@@ -590,9 +619,7 @@ function BotsStep() {
         onInstall={() => install('3p')}
       />
       <p className="text-xs text-muted-foreground">
-        Installation runs <span className="font-mono">uv sync</span> on the
-        bot's <span className="font-mono">pyproject.toml</span> and may take
-        a minute on first run. Progress shows up as a toast in the corner.
+        {t('setup.bots.install_note', { cmd: 'uv sync', file: 'pyproject.toml' })}
       </p>
     </div>
   )
@@ -615,6 +642,7 @@ function BotInstallCard({
   error?: string
   onInstall: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="rounded-md border p-3 grid gap-2">
       <div className="flex items-center justify-between gap-2">
@@ -624,11 +652,11 @@ function BotInstallCard({
         </div>
         {installed ? (
           <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-            Installed
+            {t('common.installed')}
           </span>
         ) : (
           <Button onClick={onInstall} disabled={disabled} size="sm">
-            {installing ? 'Installing…' : 'Install'}
+            {installing ? t('common.installing') : t('common.install')}
           </Button>
         )}
       </div>
@@ -646,6 +674,7 @@ function ConfigureBotsStep({
   drafts: Record<string, BotSettings>
   setDrafts: React.Dispatch<React.SetStateAction<Record<string, BotSettings>>>
 }) {
+  const { t } = useTranslation()
   const [installed, setInstalled] = useState<BotInfo[] | null>(null)
   const [loadErrors, setLoadErrors] = useState<Record<string, string>>({})
 
@@ -690,17 +719,15 @@ function ConfigureBotsStep({
   )
 
   if (installed === null) {
-    return <div className="text-sm text-muted-foreground">Loading bot settings…</div>
+    return <div className="text-sm text-muted-foreground">{t('setup.configure.loading')}</div>
   }
 
   if (wizardBots.length === 0) {
     return (
       <div className="grid gap-3">
-        <h2 className="text-lg font-semibold">Configure bots</h2>
+        <h2 className="text-lg font-semibold">{t('setup.configure.title')}</h2>
         <p className="text-sm text-muted-foreground">
-          No author-provided bots are installed. Skip this step or go back to
-          install one. You can always tune bot settings later under Bots →
-          Configure.
+          {t('setup.configure.empty_desc')}
         </p>
       </div>
     )
@@ -708,11 +735,9 @@ function ConfigureBotsStep({
 
   return (
     <div className="grid gap-4">
-      <h2 className="text-lg font-semibold">Configure bots</h2>
+      <h2 className="text-lg font-semibold">{t('setup.configure.title')}</h2>
       <p className="text-sm text-muted-foreground">
-        Defaults are usually fine — these knobs let you swap models, tune
-        latency, and toggle bot behaviours. You can change them later under
-        Bots → Configure.
+        {t('setup.configure.normal_desc')}
       </p>
       {wizardBots.map((b) => (
         <BotSettingsForm
@@ -744,6 +769,7 @@ function BotSettingsForm({
   loadError?: string
   onChange: (values: Record<string, unknown>) => void
 }) {
+  const { t } = useTranslation()
   const title = settings?.manifest.bot.display ?? name
   const description = settings?.manifest.bot.description
 
@@ -758,7 +784,7 @@ function BotSettingsForm({
   if (!settings) {
     return (
       <div className="rounded-md border p-3 text-sm text-muted-foreground">
-        Loading {name}…
+        {t('setup.configure.loading_bot', { name })}
       </div>
     )
   }
@@ -771,7 +797,7 @@ function BotSettingsForm({
         {description && <div className="text-xs text-muted-foreground">{description}</div>}
       </div>
       {entries.length === 0 ? (
-        <div className="text-xs text-muted-foreground">No tunable settings.</div>
+        <div className="text-xs text-muted-foreground">{t('setup.configure.no_settings')}</div>
       ) : (
         <div className="grid gap-3">
           {entries.map(([key, spec]) => (
@@ -790,6 +816,7 @@ function BotSettingsForm({
 }
 
 function FinishStep({ draft }: { draft: AppConfig }) {
+  const { t } = useTranslation()
   const m = draft.capture.mode
   const [installed, setInstalled] = useState<BotInfo[] | null>(null)
   useEffect(() => {
@@ -803,38 +830,37 @@ function FinishStep({ draft }: { draft: AppConfig }) {
       ? `${BOT_4P_NAME} (4P)`
       : has3p
         ? `${BOT_3P_NAME} (3P)`
-        : 'none — analysis will be unavailable'
+        : t('setup.finish.bots_none')
   return (
     <div className="grid gap-3">
-      <h2 className="text-lg font-semibold">All set</h2>
+      <h2 className="text-lg font-semibold">{t('setup.finish.title')}</h2>
       <div className="rounded-md border border-border/50 p-3 text-sm">
-        <div><b>Platform:</b> {platformInfo(draft.platform.kind).label}</div>
-        <div><b>Mode:</b> {m === 'chromium' ? 'Chromium browser' : 'MITM proxy'}</div>
+        <div><b>{t('setup.finish.platform_label')}</b> {t(platformInfo(draft.platform.kind).labelKey)}</div>
+        <div><b>{t('setup.finish.mode_label')}</b> {m === 'chromium' ? t('setup.finish.mode_chromium') : t('setup.finish.mode_mitm')}</div>
         {m === 'mitm' && (
           <>
-            <div><b>Listen:</b> {draft.proxy.addr}</div>
-            <div><b>CA dir:</b> {draft.proxy.ca_dir}</div>
+            <div><b>{t('setup.finish.listen_label')}</b> {draft.proxy.addr}</div>
+            <div><b>{t('setup.finish.ca_dir_label')}</b> {draft.proxy.ca_dir}</div>
           </>
         )}
         {m === 'chromium' && (
           <>
             <div>
-              <b>Executable:</b>{' '}
+              <b>{t('setup.finish.exec_label')}</b>{' '}
               {draft.capture.chromium.executable
                 ? draft.capture.chromium.executable
                 : draft.capture.chromium.force_cft
-                  ? `(Chrome for Testing — ${draft.capture.chromium.cft_channel || 'stable'})`
-                  : '(auto-detect: system → Chrome for Testing)'}
+                  ? t('setup.finish.exec_cft', { channel: draft.capture.chromium.cft_channel || 'stable' })
+                  : t('setup.finish.exec_autodetect')}
             </div>
-            <div><b>Start URL:</b> {draft.capture.chromium.start_url}</div>
-            <div><b>CfT channel:</b> {draft.capture.chromium.cft_channel}</div>
+            <div><b>{t('setup.finish.start_url_label')}</b> {draft.capture.chromium.start_url}</div>
+            <div><b>{t('setup.finish.cft_channel_label')}</b> {draft.capture.chromium.cft_channel}</div>
           </>
         )}
-        <div><b>Bots:</b> {installed === null ? 'checking…' : botSummary}</div>
+        <div><b>{t('setup.finish.bots_label')}</b> {installed === null ? t('setup.finish.bots_checking') : botSummary}</div>
       </div>
       <p className="text-sm text-muted-foreground">
-        Click <b>Finish</b> to save these settings. The capture backend will start automatically.
-        You can change everything later in Settings → Capture, or rerun this wizard from there.
+        {t('setup.finish.click_finish_pre')}<b>{t('setup.finish.click_finish_btn')}</b>{t('setup.finish.click_finish_post')}
       </p>
     </div>
   )
