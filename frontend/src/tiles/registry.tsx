@@ -8,6 +8,7 @@ import { EventsTile } from './EventsTile'
 import { NotificationsTile } from './NotificationsTile'
 import { BotResponsesTile } from './BotResponsesTile'
 import { BotActionTile } from './BotActionTile'
+import { BotShowTile } from './BotShowTile'
 import { ProxyControlTile } from './ProxyControlTile'
 import type { Breakpoint, TileId } from './defaults'
 
@@ -26,6 +27,7 @@ export function renderTile(id: TileId, bp: Breakpoint) {
     case 'notifications':   return <NotificationsTile bp={bp} />
     case 'bot-responses':   return <BotResponsesTile bp={bp} />
     case 'bot-action':      return <BotActionTile bp={bp} />
+    case 'bot-show':        return <BotShowTile bp={bp} />
     case 'proxy-control':   return <ProxyControlTile bp={bp} />
   }
 }

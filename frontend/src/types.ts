@@ -22,6 +22,31 @@ export type MjaiEvent =
 
 export type BotResponse = MjaiEvent & { meta?: Record<string, unknown> }
 
+/** Bot-driven custom display payload, attached on `meta.show`.
+ *  Schema is intentionally generic so a single tile can render top-N
+ *  actions, opponent reads, yaku breakdowns, etc. — bots decide the
+ *  semantics and formatting. */
+export type ShowItem = {
+  /** Primary text on the row. */
+  label?: string
+  /** mjai tile strings; converted to mahgen via `mjaiToMahgen`. */
+  pais?: string[]
+  /** Raw mahgen DSL string. Wins over `pais` if both are set. */
+  tiles?: string
+  /** Right-side text (any format — e.g. "85.42%", "+12000"). */
+  value?: string
+  /** Hex accent color (e.g. "#00ff80") — applied as left bar + faint row tint. */
+  color?: string
+  /** Small subtitle under `label`. */
+  note?: string
+}
+
+export type ShowMeta = {
+  /** Optional title; falls back to the tile's default title. */
+  title?: string
+  items: ShowItem[]
+}
+
 export type BotStatus =
   | { state: 'idle' }
   | { state: 'loading'; bot: string; stage: 'syncing_deps' | 'spawning' }

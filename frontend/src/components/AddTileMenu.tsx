@@ -32,6 +32,7 @@ const TILE_TITLE_KEYS: Record<TileId, string> = {
   'notifications':   'tile.notifications',
   'bot-responses':   'tile.bot_responses',
   'bot-action':      'tile.bot_action',
+  'bot-show':        'tile.bot_show',
   'proxy-control':   'tile.proxy_control',
 }
 

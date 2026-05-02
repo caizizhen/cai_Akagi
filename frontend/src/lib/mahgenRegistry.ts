@@ -4,7 +4,7 @@
 // root; setting host + inner <img> dimensions in pixels is the only path
 // that survives the WebKitGTK + circular-containing-block constraints.
 
-export type MahgenKind = 'river' | 'hand' | 'melds' | 'dora' | 'rec' | 'bot-action'
+export type MahgenKind = 'river' | 'hand' | 'melds' | 'dora' | 'rec' | 'bot-action' | 'bot-show'
 
 type SizeCtx =
   | { mode: 'river'; maxScale?: number; minScale?: number }
@@ -22,6 +22,10 @@ const SIZE_CTX: Record<MahgenKind, SizeCtx> = {
   // full tile width — pick base/ref so a typical lg tile (~580px) produces a
   // tile roughly matching the left-side glyph's drawn height.
   'bot-action': { mode: 'linear', base: 35, ref: 290, min: 28, max: 110 },
+  // bot-show: per-row tile group inside the BotShowTile list. Smaller than
+  // bot-action so the label/value columns stay readable; cap higher than
+  // 'rec' for chi/pon melds.
+  'bot-show': { mode: 'linear', base: 30, ref: 260, min: 22, max: 64 },
 }
 
 const RIVER_FULL_ROW_W = 420
