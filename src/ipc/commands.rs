@@ -550,6 +550,31 @@ fn open_path(path: &Path) -> CmdResult<()> {
         .map_err(|e| format!("open path {}: {e}", path.display()))
 }
 
+/// Opens an `http(s)://` URL in the user's default browser. Used by the
+/// first-run wizard for the GitHub / Discord links — Tauri 2's webview
+/// won't reliably honour `target="_blank"` without the opener plugin, so
+/// we route the click through the OS's native handler ourselves.
+/// Validates the scheme to keep this from being abused as a generic
+/// process spawn.
+#[tauri::command]
+pub async fn open_external_url(url: String) -> CmdResult<()> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err(format!("refused non-http(s) url: {url}"));
+    }
+    #[cfg(target_os = "linux")]
+    let cmd = "xdg-open";
+    #[cfg(target_os = "macos")]
+    let cmd = "open";
+    #[cfg(target_os = "windows")]
+    let cmd = "explorer";
+
+    std::process::Command::new(cmd)
+        .arg(&url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("open url {url}: {e}"))
+}
+
 /// Strict matcher for session directory names — `YYYYMMDD-HHMMSS`. Used
 /// both to filter `list_log_sessions` output and to validate user-
 /// supplied session names before they touch the filesystem.
@@ -1164,6 +1189,7 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::get_status,
             $crate::ipc::commands::get_log_dir,
             $crate::ipc::commands::open_log_folder,
+            $crate::ipc::commands::open_external_url,
             $crate::ipc::commands::list_log_sessions,
             $crate::ipc::commands::read_log_session,
             $crate::ipc::commands::subscribe_log_events,

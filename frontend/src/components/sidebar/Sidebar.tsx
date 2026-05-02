@@ -4,7 +4,15 @@ import { ChevronLeft } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { useSidebar } from '@/hooks/useSidebar'
+import { GithubMark, DiscordMark } from '@/components/BrandMarks'
+import { AKAGI_GITHUB_URL, AKAGI_DISCORD_URL, openExternal } from '@/lib/external'
 import { LANG_LABELS, SUPPORTED_LANGS, type SupportedLang } from '@/i18n'
 import { Menu } from './Menu'
 
@@ -73,8 +81,33 @@ export function Sidebar() {
           )}
         </div>
         <Menu isOpen={open} />
+        {/* Community footer — always rendered, even when the sidebar is
+            collapsed, so the GitHub / Discord links are reachable in
+            both states. The version + language picker rides along
+            below it but only when there's room (open state). */}
+        <div
+          className={cn(
+            'mt-2 shrink-0 flex items-center gap-1 border-t border-border pt-3',
+            open ? 'justify-start px-1' : 'justify-center',
+          )}
+        >
+          <CommunityIconButton
+            label="GitHub"
+            collapsed={!open}
+            onClick={() => openExternal(AKAGI_GITHUB_URL)}
+          >
+            <GithubMark className="h-4 w-4" />
+          </CommunityIconButton>
+          <CommunityIconButton
+            label="Discord"
+            collapsed={!open}
+            onClick={() => openExternal(AKAGI_DISCORD_URL)}
+          >
+            <DiscordMark className="h-4 w-4" />
+          </CommunityIconButton>
+        </div>
         {open && (
-          <div className="mt-2 shrink-0 flex items-center justify-between gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
+          <div className="mt-2 shrink-0 flex items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>v3.0.0</span>
             <select
               className="bg-transparent border border-border rounded px-1.5 py-0.5"
@@ -91,6 +124,40 @@ export function Sidebar() {
         )}
       </div>
     </aside>
+  )
+}
+
+function CommunityIconButton({
+  label,
+  collapsed,
+  onClick,
+  children,
+}: {
+  label: string
+  collapsed: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  // Only show the right-side tooltip when the sidebar is collapsed —
+  // when expanded, the button sits in plain view and tooltips would
+  // just be visual noise.
+  return (
+    <TooltipProvider disableHoverableContent>
+      <Tooltip delayDuration={100}>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 text-muted-foreground hover:text-foreground"
+            onClick={onClick}
+            aria-label={label}
+          >
+            {children}
+          </Button>
+        </TooltipTrigger>
+        {collapsed && <TooltipContent side="right">{label}</TooltipContent>}
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 

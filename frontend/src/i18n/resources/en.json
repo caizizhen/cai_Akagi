@@ -170,7 +170,7 @@
     "player_n_self": "Player {{n}} (Self)",
     "self_hand": "Self Hand",
     "self_hand_empty": "No hand yet — connect a game.",
-    "recommendations": "Top 3 Discards",
+    "recommendations": "Algorithmic Top 3 Discards",
     "recommendations_empty": "Awaiting analysis.",
     "risk_chart": "Mixed Deal-in Risk",
     "risk_chart_empty": "Awaiting analysis.",
@@ -262,7 +262,7 @@
     "loading_config": "Loading config…",
     "rerun_setup": "Re-run setup",
     "active_bot_4p": "Active bot (4p)",
-    "active_bot_3p": "Active bot (3p, sanma)",
+    "active_bot_3p": "Active bot (3p)",
     "platform_card_title": "Platform",
     "platform_game_label": "Game",
     "platform_game_hint": "Selects which bridge parses the WebSocket protocol. Saving triggers a capture restart so the new bridge picks up the next session.",
@@ -282,7 +282,7 @@
     "user_data_dir_hint": "Leave blank to use the default Akagi profile under your config dir.",
     "start_url": "Start URL",
     "start_url_hint": "Default for {{platform}}: {{url}}",
-    "force_cft": "Force Chrome for Testing",
+    "force_cft": "Use Chrome for Testing",
     "cft_title": "Chrome for Testing",
     "cft_status_loading": "Loading…",
     "cft_status_none": "None installed",
@@ -308,7 +308,8 @@
     "welcome": {
       "title": "Welcome to Akagi",
       "body1": "Akagi watches your mahjong game traffic and runs an mjai-protocol bot alongside it for realtime advice. Before the bot can do anything, Akagi needs a way to capture the game's WebSocket traffic.",
-      "body2": "On the next page you'll pick between the legacy MITM proxy (powerful but requires CA-cert trust) and a controlled Chromium browser (no proxy / certificate setup — Akagi launches its own browser window)."
+      "body2": "On the next page you'll pick between the legacy MITM proxy (powerful but requires CA-cert trust) and a controlled Chromium browser (no proxy / certificate setup — Akagi launches its own browser window).",
+      "links_label": "Project home and community:"
     },
     "platform": {
       "title": "Pick your platform",
@@ -319,7 +320,7 @@
       "chromium_title": "Chromium browser (recommended)",
       "chromium_desc": "Akagi launches a controlled browser and intercepts WebSocket frames via Chrome DevTools Protocol. No system proxy. No CA cert. Works for Mahjong Soul and Tenhou; not for RiichiCity (no web client).",
       "mitm_title": "MITM proxy (advanced)",
-      "mitm_desc": "hudsucker-based MITM. You configure your system proxy and trust Akagi's self-signed CA. Required for RiichiCity (no web client) and useful when you already have a browser session you don't want to disturb."
+      "mitm_desc": "hudsucker-based MITM. You configure your system proxy and trust Akagi's self-signed CA. Required for RiichiCity (no web client)."
     },
     "mitm": {
       "title": "MITM proxy settings",
@@ -332,30 +333,33 @@
       "exec_hint": "Leave blank to auto-detect a system Chrome / Edge / Brave / Chromium.",
       "detected_label": "Detected browsers",
       "no_browser": "None detected on this system.",
-      "warning_no_browser": "No browser is available yet. Either install Chrome / Edge / Brave / Chromium on your system, set an explicit executable above, or click Download to install Chrome for Testing."
+      "warning_no_browser": "No browser is available yet. Either install Chrome / Edge / Brave / Chromium on your system, enter an executable path above, or click Download to install Chrome for Testing."
     },
     "bots": {
       "title": "Install MJAI bots",
-      "desc": "An MJAI bot is required for game analysis — without one, Akagi only captures traffic. The author publishes pre-built Mortal-based bots for both 4-player and 3-player modes; install one or both here. Skip this step if you'd rather build your own.",
+      "desc": "An MJAI bot is required for game analysis — without one, Akagi only captures traffic. The author publishes pre-built Mortal-based bots for both 4-player and 3-player modes; install one or both here. Skip this step if you have your own bot.",
       "license_label": "License notice:",
-      "license_body": "Akagi-MjaiBot-Mortal is distributed under {{license}}. By installing, you agree to its terms — most importantly, distributing modified versions requires releasing your modifications under {{license}} as well.",
+      "license_body": "Akagi-MjaiBot-Mortal is distributed under {{license}}. By installing, you agree to its terms.",
       "yonma_title": "4-player (yonma) — mortal",
-      "yonma_desc": "Mortal bot tuned for 4-player tables.",
+      "yonma_desc": "Mortal bot for 4-player tables.",
       "sanma_title": "3-player (sanma) — mortal3p",
-      "sanma_desc": "Mortal RL bot tuned for 3-player tables.",
-      "install_note": "Installation runs {{cmd}} on the bot's {{file}} and may take a minute on first run. Progress shows up as a toast in the corner."
+      "sanma_desc": "Mortal RL bot for 3-player tables.",
+      "install_note": "Installation runs {{cmd}} on the bot's {{file}} and may take a few minutes on first run."
     },
     "configure": {
       "title": "Configure bots",
-      "empty_desc": "No author-provided bots are installed. Skip this step or go back to install one. You can always tune bot settings later under Bots → Configure.",
-      "normal_desc": "Defaults are usually fine — these knobs let you swap models, tune latency, and toggle bot behaviours. You can change them later under Bots → Configure.",
+      "empty_desc": "No MJAI bots are installed. Skip this step or go back to install one. You can always tune bot settings later under Bots → Configure.",
+      "normal_desc": "These knobs let you tweak bot behaviour. You can change them later under Bots → Configure.",
       "no_settings": "No tunable settings.",
       "loading_bot": "Loading {{name}}…",
-      "loading": "Loading bot settings…"
+      "loading": "Loading bot settings…",
+      "models_title": "Stronger models on Discord",
+      "models_body": "The Mortal weights bundled with this install are only there to verify that the install works — not recommended for real play. Stronger weights are available on the Discord server.",
+      "models_btn": "Open Discord"
     },
     "finish": {
       "title": "All set",
-      "platform_label": "Platform:",
+      "platform_label": "Game platform:",
       "mode_label": "Mode:",
       "mode_chromium": "Chromium browser",
       "mode_mitm": "MITM proxy",
@@ -411,7 +415,7 @@
     "capture_mitm": "Capture (MITM)",
     "log_session": "Log Session",
     "last_analysis": "Latest analysis",
-    "open_dashboard": "Open Game Dashboard"
+    "open_dashboard": "Open Game Analysis"
   },
   "game": {
     "bot_disabled_title": "Bot is disabled",
@@ -462,7 +466,7 @@
   },
   "platform": {
     "majsoul": "Mahjong Soul",
-    "majsoul_desc": "game.maj-soul.com — yonma + sanma, ranked + friend rooms.",
+    "majsoul_desc": "game.maj-soul.com — yonma + sanma",
     "tenhou": "Tenhou",
     "tenhou_desc": "tenhou.net — yonma + sanma",
     "riichi_city": "Riichi City",

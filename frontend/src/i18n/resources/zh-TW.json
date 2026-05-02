@@ -170,7 +170,7 @@
     "player_n_self": "玩家 {{n}}（自家）",
     "self_hand": "自家手牌",
     "self_hand_empty": "尚無手牌 — 請先連線至遊戲。",
-    "recommendations": "前三建議切牌",
+    "recommendations": "純算法前三建議切牌",
     "recommendations_empty": "等待分析中。",
     "risk_chart": "綜合放銃風險",
     "risk_chart_empty": "等待分析中。",
@@ -262,13 +262,13 @@
     "loading_config": "載入設定中…",
     "rerun_setup": "重新執行設定精靈",
     "active_bot_4p": "啟用的 Bot（四麻）",
-    "active_bot_3p": "啟用的 Bot（三麻 sanma）",
+    "active_bot_3p": "啟用的 Bot（三麻）",
     "platform_card_title": "平台",
     "platform_game_label": "遊戲",
     "platform_game_hint": "選擇要解析哪個遊戲的 WebSocket 協定。儲存後會重新啟動 capture，下一場對局即會由新的 bridge 接手。",
     "capture_card_title": "封包擷取",
     "capture_mode_label": "模式",
-    "capture_mode_hint": "MITM 代理需要 CA 憑證 + 系統代理；Chromium 模式則啟動受控瀏覽器，無需任何前置設定。",
+    "capture_mode_hint": "MITM 代理需要 CA 憑證 + 系統代理；Chromium 模式則啟動受控瀏覽器，無需前置設定。",
     "capture_mitm_option": "MITM 代理",
     "capture_chromium_option": "Chromium 瀏覽器（實驗性）",
     "proxy_enabled": "啟用代理",
@@ -282,7 +282,7 @@
     "user_data_dir_hint": "留空則使用 config 目錄下預設的 Akagi profile。",
     "start_url": "起始 URL",
     "start_url_hint": "{{platform}} 的預設值：{{url}}",
-    "force_cft": "強制使用 Chrome for Testing",
+    "force_cft": "使用 Chrome for Testing",
     "cft_title": "Chrome for Testing",
     "cft_status_loading": "載入中…",
     "cft_status_none": "未安裝任何版本",
@@ -308,7 +308,8 @@
     "welcome": {
       "title": "歡迎使用 Akagi",
       "body1": "Akagi 會監聽你的麻將遊戲流量，並同時執行一個 mjai 協定的 Bot 提供即時建議。在 Bot 動工之前，Akagi 需要先有一個方式來擷取遊戲的 WebSocket 流量。",
-      "body2": "下一頁你可以在「傳統 MITM 代理」（功能強但需要信任 CA 憑證）與「受控的 Chromium 瀏覽器」（無需設定代理／憑證 — Akagi 會自己啟動瀏覽器）之間擇一。"
+      "body2": "下一頁你可以在「傳統 MITM 代理」（功能強但需要信任 CA 憑證）與「受控的 Chromium 瀏覽器」（無需設定代理／憑證 — Akagi 會自己啟動瀏覽器）之間擇一。",
+      "links_label": "專案首頁與官方社群："
     },
     "platform": {
       "title": "選擇遊戲平台",
@@ -319,7 +320,7 @@
       "chromium_title": "Chromium 瀏覽器（建議）",
       "chromium_desc": "Akagi 會啟動一個受控的瀏覽器，並透過 Chrome DevTools Protocol 攔截 WebSocket 封包。不需要系統代理，也不需要 CA 憑證。支援雀魂（Mahjong Soul）與天鳳（Tenhou）；不支援麻雀一番街（無 Web 客戶端）。",
       "mitm_title": "MITM 代理（進階）",
-      "mitm_desc": "以 hudsucker 為基礎的 MITM。你需要設定系統代理並信任 Akagi 的自簽 CA。麻雀一番街必須使用此模式（無 Web 客戶端），如果你想沿用既有瀏覽器的登入狀態，這也很好用。"
+      "mitm_desc": "以 hudsucker 為基礎的 MITM。你需要設定系統代理並信任 Akagi 的自簽 CA。麻雀一番街必須使用此模式（無 Web 客戶端）。"
     },
     "mitm": {
       "title": "MITM 代理設定",
@@ -332,30 +333,33 @@
       "exec_hint": "留空以自動偵測系統內的 Chrome / Edge / Brave / Chromium。",
       "detected_label": "已偵測到的瀏覽器",
       "no_browser": "本機尚未偵測到任何瀏覽器。",
-      "warning_no_browser": "目前沒有可用的瀏覽器。請選擇下列其中之一：在系統上安裝 Chrome / Edge / Brave / Chromium、在上方手動指定執行檔路徑，或點擊「下載」安裝 Chrome for Testing。"
+      "warning_no_browser": "目前沒有可用的瀏覽器。請選擇下列其中之一：在系統上安裝 Chrome / Edge / Brave / Chromium、在上方手動填入執行檔路徑，或點擊「下載」安裝 Chrome for Testing。"
     },
     "bots": {
       "title": "安裝 MJAI Bot",
-      "desc": "對局分析需要 MJAI Bot — 沒有 Bot 的話，Akagi 只會擷取流量。作者提供基於 Mortal 預編譯好的 Bot，分為四麻與三麻兩種；可在此擇一或全部安裝。如果你想自行編譯，可跳過此步。",
+      "desc": "對局分析需要 MJAI Bot — 沒有 Bot 的話，Akagi 只會擷取流量。作者提供基於 Mortal 預編譯好的 Bot，分為四麻與三麻兩種；可在此擇一或全部安裝。如果你有自己的 Bot，可跳過此步。",
       "license_label": "授權聲明：",
-      "license_body": "Akagi-MjaiBot-Mortal 採用 {{license}} 授權發佈。安裝即代表你同意其條款 — 最重要的是，散佈修改版本時必須同樣以 {{license}} 釋出你的修改。",
+      "license_body": "Akagi-MjaiBot-Mortal 採用 {{license}} 授權發佈。安裝即代表你同意其條款。",
       "yonma_title": "四麻 — mortal",
-      "yonma_desc": "Mortal Bot，調校給四人麻將使用。",
+      "yonma_desc": "Mortal Bot，給四人麻將使用。",
       "sanma_title": "三麻 — mortal3p",
-      "sanma_desc": "Mortal RL Bot，調校給三人麻將使用。",
-      "install_note": "安裝過程會對 Bot 的 {{file}} 執行 {{cmd}}，第一次跑可能要一兩分鐘。進度會以右下角的 toast 顯示。"
+      "sanma_desc": "Mortal RL Bot，給三人麻將使用。",
+      "install_note": "安裝過程會對 Bot 的 {{file}} 執行 {{cmd}}，第一次跑可能需要數分鐘。"
     },
     "configure": {
       "title": "Bot 參數設定",
-      "empty_desc": "目前沒有安裝作者提供的 Bot。可跳過此步，或回上一步安裝其中一個。日後也能在「Bots → 設定」中再行調整。",
-      "normal_desc": "預設值通常已經夠用 — 這些選項可讓你切換模型、微調延遲、開關 Bot 行為。日後也能在「Bots → 設定」中變更。",
+      "empty_desc": "目前沒有安裝任何 MJAI Bot。可跳過此步，或回上一步安裝其中一個。日後也能在「Bots → 設定」中再行調整。",
+      "normal_desc": "這些選項可讓你調整 Bot 行為。日後也能在「Bots → 設定」中變更。",
       "no_settings": "此 Bot 沒有可調整的參數。",
       "loading_bot": "載入 {{name}} 中…",
-      "loading": "載入 Bot 設定中…"
+      "loading": "載入 Bot 設定中…",
+      "models_title": "到 Discord 取得更強的模型",
+      "models_body": "此安裝隨附的 Mortal 權重只是用來驗證安裝是否正確跑起來，不建議實戰使用。更強的模型可以到 Discord 伺服器取得。",
+      "models_btn": "開啟 Discord"
     },
     "finish": {
       "title": "全部完成",
-      "platform_label": "平台：",
+      "platform_label": "遊戲平台：",
       "mode_label": "模式：",
       "mode_chromium": "Chromium 瀏覽器",
       "mode_mitm": "MITM 代理",
@@ -411,7 +415,7 @@
     "capture_mitm": "Capture（MITM）",
     "log_session": "日誌 Session",
     "last_analysis": "最新一次分析",
-    "open_dashboard": "開啟對局儀表板"
+    "open_dashboard": "開啟對局分析"
   },
   "game": {
     "bot_disabled_title": "Bot 已停用",
@@ -462,7 +466,7 @@
   },
   "platform": {
     "majsoul": "雀魂",
-    "majsoul_desc": "game.maj-soul.com — 四麻 + 三麻、段位場 + 友人場。",
+    "majsoul_desc": "game.maj-soul.com — 四麻 + 三麻",
     "tenhou": "天鳳",
     "tenhou_desc": "tenhou.net — 四麻 + 三麻",
     "riichi_city": "麻雀一番街",

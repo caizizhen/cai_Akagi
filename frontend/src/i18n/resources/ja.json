@@ -170,7 +170,7 @@
     "player_n_self": "プレイヤー {{n}}（自分）",
     "self_hand": "手牌",
     "self_hand_empty": "手牌がまだありません — ゲームに接続してください。",
-    "recommendations": "推奨打牌 トップ3",
+    "recommendations": "アルゴリズム推奨打牌 トップ3",
     "recommendations_empty": "解析待ちです。",
     "risk_chart": "総合放銃リスク",
     "risk_chart_empty": "解析待ちです。",
@@ -262,7 +262,7 @@
     "loading_config": "設定を読み込み中…",
     "rerun_setup": "セットアップを再実行",
     "active_bot_4p": "アクティブな Bot（四麻）",
-    "active_bot_3p": "アクティブな Bot（三麻 sanma）",
+    "active_bot_3p": "アクティブな Bot（三麻）",
     "platform_card_title": "プラットフォーム",
     "platform_game_label": "ゲーム",
     "platform_game_hint": "どのゲームの WebSocket プロトコルを解析するか選択します。保存すると capture が再起動し、次のセッションから新しい bridge が引き継ぎます。",
@@ -282,7 +282,7 @@
     "user_data_dir_hint": "空欄にすると config 配下の Akagi デフォルト profile を使用します。",
     "start_url": "開始 URL",
     "start_url_hint": "{{platform}} のデフォルト: {{url}}",
-    "force_cft": "Chrome for Testing を強制使用",
+    "force_cft": "Chrome for Testing を使用",
     "cft_title": "Chrome for Testing",
     "cft_status_loading": "読み込み中…",
     "cft_status_none": "未インストール",
@@ -308,7 +308,8 @@
     "welcome": {
       "title": "Akagi へようこそ",
       "body1": "Akagi は麻雀ゲームのトラフィックを監視し、mjai プロトコル Bot と連携してリアルタイムにアドバイスを提供します。Bot が動き出す前に、Akagi はゲームの WebSocket を取得する手段を必要とします。",
-      "body2": "次のページでは「従来型 MITM プロキシ（強力ですが CA 証明書の信頼が必要）」と「制御下の Chromium ブラウザ（プロキシ／証明書の設定不要 — Akagi が自前のブラウザを起動）」のどちらかを選択します。"
+      "body2": "次のページでは「従来型 MITM プロキシ（強力ですが CA 証明書の信頼が必要）」と「制御下の Chromium ブラウザ（プロキシ／証明書の設定不要 — Akagi が自前のブラウザを起動）」のどちらかを選択します。",
+      "links_label": "プロジェクトホームと公式コミュニティ："
     },
     "platform": {
       "title": "プラットフォームを選択",
@@ -319,7 +320,7 @@
       "chromium_title": "Chromium ブラウザ（推奨）",
       "chromium_desc": "Akagi は制御下のブラウザを起動し、Chrome DevTools Protocol で WebSocket フレームを傍受します。システムプロキシも CA 証明書も不要。雀魂（Mahjong Soul）と天鳳（Tenhou）に対応；麻雀一番街は Web クライアントが無いため非対応です。",
       "mitm_title": "MITM プロキシ（上級者向け）",
-      "mitm_desc": "hudsucker ベースの MITM。システムプロキシを設定し、Akagi の自己署名 CA を信頼する必要があります。麻雀一番街には必須です（Web クライアントが無いため）。既存ブラウザのログイン状態を変更したくない場合にも便利です。"
+      "mitm_desc": "hudsucker ベースの MITM。システムプロキシを設定し、Akagi の自己署名 CA を信頼する必要があります。麻雀一番街には必須です（Web クライアントが無いため）。"
     },
     "mitm": {
       "title": "MITM プロキシ設定",
@@ -332,30 +333,33 @@
       "exec_hint": "空欄にするとシステム内の Chrome / Edge / Brave / Chromium を自動検出します。",
       "detected_label": "検出されたブラウザ",
       "no_browser": "このシステムでは何も検出されませんでした。",
-      "warning_no_browser": "現時点で利用可能なブラウザがありません。次のいずれかを行ってください: システムに Chrome / Edge / Brave / Chromium をインストール、上で実行ファイルを明示的に指定、または「ダウンロード」をクリックして Chrome for Testing をインストール。"
+      "warning_no_browser": "現時点で利用可能なブラウザがありません。次のいずれかを行ってください: システムに Chrome / Edge / Brave / Chromium をインストール、上で実行ファイルのパスを入力、または「ダウンロード」をクリックして Chrome for Testing をインストール。"
     },
     "bots": {
       "title": "MJAI Bot をインストール",
-      "desc": "対局解析には MJAI Bot が必要です — Bot が無いと Akagi はトラフィックを取得するだけになります。作者は Mortal をベースに事前ビルドした Bot を四人麻将と三人麻将それぞれ提供しています。ここで片方または両方をインストールできます。自分でビルドする場合はこのステップをスキップしてください。",
+      "desc": "対局解析には MJAI Bot が必要です — Bot が無いと Akagi はトラフィックを取得するだけになります。作者は Mortal をベースに事前ビルドした Bot を四人麻将と三人麻将それぞれ提供しています。ここで片方または両方をインストールできます。自前の Bot がある場合はこのステップをスキップしてください。",
       "license_label": "ライセンスのご注意:",
-      "license_body": "Akagi-MjaiBot-Mortal は {{license}} で配布されています。インストールはその条項への同意を意味します — 特に重要なのは、改変版を配布する場合、改変部分も {{license}} の下で公開する必要があるという点です。",
+      "license_body": "Akagi-MjaiBot-Mortal は {{license}} で配布されています。インストールはその条項への同意を意味します。",
       "yonma_title": "四麻 — mortal",
-      "yonma_desc": "四人麻将向けにチューニングされた Mortal Bot。",
+      "yonma_desc": "四人麻将向けの Mortal Bot。",
       "sanma_title": "三麻 — mortal3p",
-      "sanma_desc": "三人麻将向けにチューニングされた Mortal RL Bot。",
-      "install_note": "インストール時に Bot の {{file}} に対して {{cmd}} を実行します。初回は数分かかることがあります。進捗は右下のトーストで表示されます。"
+      "sanma_desc": "三人麻将向けの Mortal RL Bot。",
+      "install_note": "インストール時に Bot の {{file}} に対して {{cmd}} を実行します。初回は数分かかることがあります。"
     },
     "configure": {
       "title": "Bot の設定",
-      "empty_desc": "作者提供の Bot はインストールされていません。このステップをスキップするか、戻ってインストールしてください。あとから「Bots → 設定」で調整できます。",
-      "normal_desc": "通常はデフォルト設定で十分です — これらのつまみでモデル切替、レイテンシ調整、Bot の挙動の切り替えができます。あとから「Bots → 設定」で変更できます。",
+      "empty_desc": "MJAI Bot がインストールされていません。このステップをスキップするか、戻ってインストールしてください。あとから「Bots → 設定」で調整できます。",
+      "normal_desc": "これらのつまみで Bot の挙動を調整できます。あとから「Bots → 設定」で変更できます。",
       "no_settings": "この Bot に調整可能な設定はありません。",
       "loading_bot": "{{name}} を読み込み中…",
-      "loading": "Bot 設定を読み込み中…"
+      "loading": "Bot 設定を読み込み中…",
+      "models_title": "より強いモデルは Discord で配布",
+      "models_body": "この同梱の Mortal 重みはインストールが正しく動くことの確認用で、実戦には推奨しません。より強い重みは Discord サーバーで入手できます。",
+      "models_btn": "Discord を開く"
     },
     "finish": {
       "title": "セットアップ完了",
-      "platform_label": "プラットフォーム:",
+      "platform_label": "ゲームプラットフォーム:",
       "mode_label": "モード:",
       "mode_chromium": "Chromium ブラウザ",
       "mode_mitm": "MITM プロキシ",
@@ -411,7 +415,7 @@
     "capture_mitm": "Capture（MITM）",
     "log_session": "ログセッション",
     "last_analysis": "最新の解析",
-    "open_dashboard": "対局ダッシュボードを開く"
+    "open_dashboard": "対局解析を開く"
   },
   "game": {
     "bot_disabled_title": "Bot は無効です",
@@ -462,7 +466,7 @@
   },
   "platform": {
     "majsoul": "雀魂",
-    "majsoul_desc": "game.maj-soul.com — 四麻 + 三麻、段位戦 + 友人戦。",
+    "majsoul_desc": "game.maj-soul.com — 四麻 + 三麻",
     "tenhou": "天鳳",
     "tenhou_desc": "tenhou.net — 四麻 + 三麻",
     "riichi_city": "麻雀一番街",
