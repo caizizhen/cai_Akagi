@@ -99,12 +99,15 @@ impl PythonRuntime {
                 .with_context(|| format!("create {}", parent.display()))?;
         }
 
-        let status = Command::new(&self.uv)
+        let mut sync_cmd = Command::new(&self.uv);
+        sync_cmd
             .arg("sync")
             .arg("--project")
             .arg(bot_dir)
             .env("UV_PYTHON", &self.python)
-            .env("UV_PROJECT_ENVIRONMENT", &venv)
+            .env("UV_PROJECT_ENVIRONMENT", &venv);
+        scrub_python_env(&mut sync_cmd);
+        let status = sync_cmd
             .status()
             .await
             .with_context(|| format!("spawn `uv` at {}", self.uv.display()))?;
@@ -123,8 +126,24 @@ impl PythonRuntime {
         let py = venv_python(&bot_dir.join(AKAGI_DIR).join(VENV_DIR));
         let mut cmd = Command::new(py);
         cmd.current_dir(bot_dir).args(args);
+        scrub_python_env(&mut cmd);
         cmd
     }
+}
+
+/// Drop Python env vars that the AppImage runtime (and some AUR
+/// wrappers) export for *Akagi's* host process. Inherited as-is they
+/// override the bot venv's `pyvenv.cfg`, so the venv python looks for
+/// its stdlib under the AppImage mount and dies with
+/// `Fatal Python error: init_fs_encoding: failed to get the Python
+/// codec of the filesystem encoding / No module named 'encodings'`
+/// before the bot ever reads stdin — the next `react()` then surfaces
+/// as `Broken pipe (os error 32)`. Bundled python-build-standalone
+/// (used both for `uv sync` and for the venv it seeds) is relocatable
+/// and resolves its stdlib via `sys._base_executable`, so removing
+/// these is strictly safer than inheriting them.
+fn scrub_python_env(cmd: &mut Command) {
+    cmd.env_remove("PYTHONHOME").env_remove("PYTHONPATH");
 }
 
 /// Wipe the stamp file and the venv so the next `ensure_synced` runs from
@@ -315,6 +334,33 @@ mod tests {
     fn try_bundled_returns_none_when_runtime_dir_empty() {
         let tmp = TempDir::new().unwrap();
         assert!(try_bundled(tmp.path()).is_none());
+    }
+
+    /// Regression: AppImage runtimes export `PYTHONHOME` / `PYTHONPATH`
+    /// for Akagi's host process. If we let those leak into the bot
+    /// venv's python, the venv crashes at startup with
+    /// `init_fs_encoding ... No module named 'encodings'` and the next
+    /// `react()` writes hit a broken pipe (manager.rs surfaces this as
+    /// `bot react failed: write events to bot stdin: Broken pipe`). The
+    /// `command_for` builder must explicitly remove them so the venv
+    /// python falls back to its `pyvenv.cfg`-based stdlib resolution.
+    #[test]
+    fn command_for_strips_pythonhome_and_pythonpath() {
+        use std::ffi::OsStr;
+        let rt = dummy_runtime();
+        let tmp = TempDir::new().unwrap();
+        let cmd = rt.command_for(tmp.path(), &["bot.py"]);
+        let envs: Vec<(&OsStr, Option<&OsStr>)> = cmd.as_std().get_envs().collect();
+        assert!(
+            envs.iter()
+                .any(|(k, v)| *k == OsStr::new("PYTHONHOME") && v.is_none()),
+            "PYTHONHOME must be removed (got envs={envs:?})"
+        );
+        assert!(
+            envs.iter()
+                .any(|(k, v)| *k == OsStr::new("PYTHONPATH") && v.is_none()),
+            "PYTHONPATH must be removed (got envs={envs:?})"
+        );
     }
 
     #[tokio::test]
