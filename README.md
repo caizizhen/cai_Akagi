@@ -13,7 +13,7 @@
   <i>「死ねば助かるのに………」 - 赤木しげる</i>
   <br/><br/>
   Real-time mahjong AI assistant for <b>Mahjong Soul</b>, <b>Tenhou</b>, and more.<br/>
-  A single-binary Rust + Tauri rewrite of
+  Akagi V3: A single-binary Rust + Tauri rewrite of
   <a href="https://github.com/shinkuan/Akagi">Akagi</a> and
   <a href="https://github.com/shinkuan/AkagiNG">AkagiNG</a>.
   <br/><br/>
@@ -43,6 +43,14 @@
 <p align="center">
   <a href="https://github.com/shinkuan/Akagi/tree/v2"><img src="https://img.shields.io/badge/Akagi-v2_(Python)-blue?logo=github" alt="v2 branch" /></a>
   <a href="https://github.com/shinkuan/Akagi/tree/ng"><img src="https://img.shields.io/badge/Akagi-NG_(Electron)-blue?logo=github" alt="NG branch" /></a>
+</p>
+
+<p align="center">
+  <b>English</b>
+  ·
+  <a href="./README.zh-TW.md">繁體中文</a>
+  ·
+  <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
 ---
