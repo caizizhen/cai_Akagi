@@ -92,6 +92,10 @@ async fn loading_emits_syncing_then_spawning_then_ready() {
     write_echo_bot(&bot_dir);
 
     let runtime = PythonRuntime::from_paths(py, uv, akagi::bot::RuntimeMode::System);
+    // Sanity-check the layout once before handing off — manager itself
+    // rescans on every spawn now (regression test for stale-snapshot
+    // bug), but we still want a clear failure here if write_echo_bot
+    // ever silently changes shape.
     let registry = BotRegistry::scan(registry_root.path()).unwrap();
     assert!(
         registry.find("echo").is_some(),
@@ -106,7 +110,7 @@ async fn loading_emits_syncing_then_spawning_then_ready() {
 
     let mut mgr = BotManager::new(
         runtime,
-        registry,
+        registry_root.path().to_path_buf(),
         "echo".into(),
         String::new(),
         response_bus,
@@ -190,7 +194,6 @@ async fn second_spawn_skips_uv_sync_via_stamp() {
 
     let runtime =
         PythonRuntime::from_paths(py.clone(), uv.clone(), akagi::bot::RuntimeMode::System);
-    let registry = BotRegistry::scan(registry_root.path()).unwrap();
 
     // Cold spawn — populates venv + stamp.
     {
@@ -199,7 +202,7 @@ async fn second_spawn_skips_uv_sync_via_stamp() {
         let notify = notify_bus();
         let mut mgr = BotManager::new(
             runtime.clone(),
-            registry.clone(),
+            registry_root.path().to_path_buf(),
             "echo".into(),
             String::new(),
             response_bus,
@@ -231,7 +234,7 @@ async fn second_spawn_skips_uv_sync_via_stamp() {
     let mut status_rx = status_bus.subscribe();
     let mut mgr = BotManager::new(
         runtime,
-        registry,
+        registry_root.path().to_path_buf(),
         "echo".into(),
         String::new(),
         response_bus,

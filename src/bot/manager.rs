@@ -38,6 +38,7 @@ use crate::schema::{
 use anyhow::{bail, Context, Result};
 use chrono::Local;
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{broadcast, Mutex};
@@ -45,7 +46,12 @@ use tracing::{debug, error, info, warn};
 
 pub struct BotManager {
     runtime: PythonRuntime,
-    registry: BotRegistry,
+    /// Resolved root for `mjai_bot/`. Re-scanned on every `spawn_runner`
+    /// so freshly installed bots (e.g. via the Setup wizard or the
+    /// Install-from-GitHub button) are picked up without restarting
+    /// Akagi — the manager's view of "what bots exist" must not be a
+    /// snapshot taken at supervisor start.
+    bot_dir: PathBuf,
     /// Active bot subdir name for 4-player games. Empty ⇒ no 4p bot configured.
     active_4p: String,
     /// Active bot subdir name for 3-player games. Empty ⇒ no 3p bot configured.
@@ -75,7 +81,7 @@ impl BotManager {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         runtime: PythonRuntime,
-        registry: BotRegistry,
+        bot_dir: PathBuf,
         active_4p: String,
         active_3p: String,
         out_tx: BotResponseBus,
@@ -87,7 +93,7 @@ impl BotManager {
         let active_name = active_4p.clone();
         Self {
             runtime,
-            registry,
+            bot_dir,
             active_4p,
             active_3p,
             active_name,
@@ -252,13 +258,25 @@ impl BotManager {
             .actor_id
             .context("spawn_runner called without actor_id")?;
 
-        let entry = match self.registry.find(&bot_name) {
+        // Rescan on each spawn so bots installed after the supervisor
+        // started (Setup wizard, Install-from-GitHub) are visible. A
+        // snapshot taken at supervisor-start time misses them and the
+        // user sees "bot not found" until they relaunch Akagi.
+        let registry = match BotRegistry::scan(&self.bot_dir) {
+            Ok(r) => r,
+            Err(e) => {
+                let msg = format!("scan {}: {e:#}", self.bot_dir.display());
+                self.fail_load(&bot_name, &msg, "Bot directory unreadable");
+                bail!(msg);
+            }
+        };
+        let entry = match registry.find(&bot_name) {
             Some(e) => e.clone(),
             None => {
                 let msg = format!(
                     "bot {:?} not found in registry at {}",
                     bot_name,
-                    self.registry.root().display()
+                    registry.root().display()
                 );
                 self.fail_load(&bot_name, &msg, "Bot not found");
                 bail!(msg);
@@ -513,8 +531,10 @@ mod tests {
         )
     }
 
-    fn empty_registry() -> BotRegistry {
-        BotRegistry::default()
+    /// Path that `BotRegistry::scan` resolves to an empty registry —
+    /// `scan` treats a non-existent root as "no bots".
+    fn empty_bot_dir() -> PathBuf {
+        PathBuf::from("/nonexistent/akagi-test-bot-dir")
     }
 
     fn fresh_syncs() -> Arc<Mutex<HashSet<String>>> {
@@ -553,7 +573,7 @@ mod tests {
         let notify_rx = notify.subscribe();
         let mut mgr = BotManager::new(
             dummy_runtime(),
-            empty_registry(),
+            empty_bot_dir(),
             "mock".into(),
             String::new(),
             bus,
@@ -755,7 +775,7 @@ mod tests {
         let mut notify_rx = notify.subscribe();
         let mut mgr = BotManager::new(
             dummy_runtime(),
-            empty_registry(),
+            empty_bot_dir(),
             "mock".into(),
             String::new(),
             bus,
@@ -796,7 +816,7 @@ mod tests {
         let mut notify_rx = notify.subscribe();
         let mut mgr = BotManager::new(
             dummy_runtime(),
-            empty_registry(),
+            empty_bot_dir(),
             "ghost".into(),
             String::new(),
             bus,
@@ -836,7 +856,7 @@ mod tests {
         let notify = notify_bus();
         let mut mgr = BotManager::new(
             dummy_runtime(),
-            empty_registry(),
+            empty_bot_dir(),
             "mock".into(),
             String::new(),
             bus,
@@ -848,6 +868,67 @@ mod tests {
         // Should not panic / error even with no runner.
         mgr.handle(dahai(0)).await.unwrap();
         assert!(mgr.pending.is_empty());
+    }
+
+    /// Regression: a bot directory that gets populated *after* the
+    /// `BotManager` is constructed must still be discoverable by the
+    /// next `start_game`. Pre-fix the manager held a registry snapshot
+    /// taken at supervisor-start time, so the Setup wizard's installs
+    /// only became visible after a full Akagi relaunch — and game-start
+    /// errored with "bot not found in registry".
+    ///
+    /// We can't run the full spawn flow (no real Python runtime in
+    /// tests), so we lean on the second check inside `spawn_runner`:
+    /// once the registry finds the entry, it errors with "no
+    /// pyproject.toml" instead of "not found in registry". Hitting that
+    /// second error proves the rescan happened.
+    #[tokio::test]
+    async fn registry_is_rescanned_on_each_start_game() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let bot_dir = tmp.path().to_path_buf();
+
+        let bus = bot_response_bus();
+        let status = bot_status_bus();
+        let notify = notify_bus();
+        let mut mgr = BotManager::new(
+            dummy_runtime(),
+            bot_dir.clone(),
+            "latebot".into(),
+            String::new(),
+            bus,
+            status,
+            notify,
+            dummy_inspector(),
+            fresh_syncs(),
+        );
+
+        // Drop a bot under bot_dir AFTER the manager exists. With the
+        // old snapshot-at-construction behaviour, this would never be
+        // visible to spawn_runner.
+        let new_bot = bot_dir.join("latebot");
+        std::fs::create_dir_all(&new_bot).unwrap();
+        std::fs::write(new_bot.join("bot.py"), b"").unwrap();
+
+        let err = mgr
+            .handle(MjaiEvent::StartGame {
+                names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+                kyoku_first: None,
+                aka_flag: None,
+                id: Some(0),
+                num_players: 4,
+            })
+            .await
+            .unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("no pyproject.toml"),
+            "expected the rescan to find latebot and fail at the pyproject \
+             check; got: {msg}"
+        );
+        assert!(
+            !msg.contains("not found in registry"),
+            "registry rescan failed to pick up post-construction install: {msg}"
+        );
     }
 
     #[tokio::test]
@@ -862,7 +943,7 @@ mod tests {
         let notify = notify_bus();
         let mut mgr = BotManager::new(
             dummy_runtime(),
-            empty_registry(),
+            empty_bot_dir(),
             "mock".into(),
             String::new(),
             bot_bus,

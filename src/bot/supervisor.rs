@@ -36,6 +36,10 @@ pub async fn run_bot_manager(
     syncs_in_flight: Arc<Mutex<HashSet<String>>>,
 ) -> Result<()> {
     let bot_dir = util::resolve_dir(Path::new(&cfg.dir));
+    // Diagnostic-only: warn early if the configured bots aren't present
+    // *now*. The manager rescans on every spawn so a bot installed after
+    // this point is still picked up — the warning here is just to surface
+    // mis-config quickly in logs, not to gate startup.
     let registry = BotRegistry::scan(&bot_dir)?;
     for (label, name) in [("4p", &cfg.active_4p), ("3p", &cfg.active_3p)] {
         if !name.is_empty() && registry.find(name).is_none() {
@@ -54,7 +58,7 @@ pub async fn run_bot_manager(
 
     let manager = BotManager::new(
         runtime,
-        registry,
+        bot_dir,
         cfg.active_4p,
         cfg.active_3p,
         response_bus,
