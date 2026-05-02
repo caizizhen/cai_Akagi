@@ -14,8 +14,8 @@
   <br/><br/>
   Real-time mahjong AI assistant for <b>Mahjong Soul</b>, <b>Tenhou</b>, and more.<br/>
   Akagi V3: A single-binary Rust + Tauri rewrite of
-  <a href="https://github.com/shinkuan/Akagi">Akagi</a> and
-  <a href="https://github.com/shinkuan/AkagiNG">AkagiNG</a>.
+  <a href="https://github.com/shinkuan/Akagi/tree/v2">Akagi</a> and
+  <a href="https://github.com/Xe-Persistent/Akagi-NG">AkagiNG</a>.
   <br/><br/>
   <a href="https://discord.gg/Z2wjXUK8bN">Ask anything on Discord</a>
   ·
@@ -42,7 +42,7 @@
 
 <p align="center">
   <a href="https://github.com/shinkuan/Akagi/tree/v2"><img src="https://img.shields.io/badge/Akagi-v2_(Python)-blue?logo=github" alt="v2 branch" /></a>
-  <a href="https://github.com/shinkuan/Akagi/tree/ng"><img src="https://img.shields.io/badge/Akagi-NG_(Electron)-blue?logo=github" alt="NG branch" /></a>
+  <a href="https://github.com/Xe-Persistent/Akagi-NG"><img src="https://img.shields.io/badge/Akagi-NG_(Electron)-blue?logo=github" alt="NG branch" /></a>
 </p>
 
 <p align="center">
@@ -630,7 +630,7 @@ Tags must be on the `v3` branch.
 | [`smly/RiichiEnv`](https://github.com/smly/RiichiEnv) (Rust RL env w/ Python bindings) | `Cargo.toml` (`riichienv-core` dep), `src/analysis/`, `src/game_state/` | Tile / hand / shanten / yaku / score primitives + game-state model. The analysis engine and game tracker are built on this. |
 | [`eric200203/mahgen`](https://github.com/eric200203/mahgen) (mahjong-tile rendering DSL) | `src/game_state/mahgen_view.rs`, frontend `<mah-gen>` | DSL syntax for pre-encoding hand / meld / river strings backend-side. |
 | [`smly/mjai.app`](https://github.com/smly/mjai.app) (mahjong AI competition platform) | `mjai_bot/`, `src/bot/` | Bot subprocess convention — JSONL stdin/stdout, argv `python bot.py <player_id>`, `AKAGI_PLAYER_ID` env, end-of-batch flush points. |
-| [`shinkuan/Akagi`](https://github.com/shinkuan/Akagi) (original Akagi, Python) | Architecture / behaviour parity | The original feature set we are reproducing: MITM proxy, mjai bridge, pluggable bots, recommendation HUD. |
+| [`shinkuan/Akagi`](https://github.com/shinkuan/Akagi/tree/v2) | Architecture / behaviour parity | The original feature set we are reproducing: MITM proxy, mjai bridge, pluggable bots, recommendation HUD. |
 
 ## License & Attribution
 
@@ -653,8 +653,8 @@ Apache-2.0 §4(d), redistributions must include both files.
 
 ## Acknowledgements
 
-- [Akagi](https://github.com/shinkuan/Akagi) (Python, v2) and
-  [AkagiNG](https://github.com/shinkuan/AkagiNG) (Electron + Python) —
+- [Akagi](https://github.com/shinkuan/Akagi/tree/v2) (Python, v2) and
+  [AkagiNG](https://github.com/Xe-Persistent/Akagi-NG) (Electron + Python) —
   the predecessors this v3 is built on.
 - [`mjai.app`](https://github.com/smly/mjai.app) and the mjai
   specification by Gimite — the protocol that makes pluggable bots
