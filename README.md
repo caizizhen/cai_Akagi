@@ -4,10 +4,10 @@
 
 <p align="center">
   <!-- Icon in design — replace src once asset is ready. -->
-  <img src="./assets/logo.png" alt="Akagi v3 logo" width="50%" />
+  <img src="https://github.com/shinkuan/RandomStuff/assets/35415788/db94b436-c3d4-4c57-893e-8db2074d2d22" width="50%">
 </p>
 
-<h1 align="center">Akagi v3</h1>
+<h1 align="center">Akagi</h1>
 
 <p align="center">
   <i>「死ねば助かるのに………」 - 赤木しげる</i>
@@ -65,15 +65,11 @@ like Mortal and the HUD also shows the bot's recommendation each turn.
 
 ## Screenshots
 
-<p align="center">
-  <img src="./assets/screenshots/game-dashboard.png" alt="Game dashboard with live HUD" width="80%" />
-</p>
-<p align="center">
-  <img src="./assets/screenshots/history-stats.png" alt="History tab with rank pie + cumulative PT" width="80%" />
-</p>
-<p align="center">
-  <img src="./assets/screenshots/setup-wizard.png" alt="First-run Setup wizard" width="80%" />
-</p>
+<img width="2559" height="1439" alt="image" src="https://github.com/user-attachments/assets/da9e7cce-d8ef-4e6e-807b-f6f54013cf22" />
+
+https://github.com/user-attachments/assets/42812e85-ccf0-49fd-b825-adbb5b7b58b0
+
+https://github.com/user-attachments/assets/2ce7cb71-8b25-4895-a12b-0a638665dcab
 
 ---
 
