@@ -20,6 +20,7 @@ use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use tokio::process::Command;
+use tracing::{info, warn};
 
 const STAMP_FILE: &str = "synced.stamp";
 const VENV_DIR: &str = "venv";
@@ -90,7 +91,36 @@ impl PythonRuntime {
 
         let current = current_signature(&pyproject, &lock)?;
         if venv.is_dir() && stamp_matches(&stamp_path, &current).await? {
-            return Ok(());
+            if venv_python_alive(&venv) {
+                return Ok(());
+            }
+            // Stamp says the deps are in sync, but `bin/python` is a
+            // dangling symlink. The AppImage case: each launch creates a
+            // fresh `/tmp/.mount_Akagi_<rand>/` mount, and uv bakes that
+            // absolute path into `bin/python` + `pyvenv.cfg.home` at
+            // sync time, so the venv built under a previous mount has
+            // dead pointers on the next launch. The standalone python +
+            // installed wheels are binary-identical across launches, so
+            // we repoint the venv to the current python without paying
+            // for a full re-sync (which would otherwise re-run on every
+            // single launch under AppImage).
+            match repoint_venv(&venv, &self.python).await {
+                Ok(()) => {
+                    info!(
+                        bot = %bot_dir.display(),
+                        python = %self.python.display(),
+                        "repointed venv to current python (AppImage mount changed)"
+                    );
+                    return Ok(());
+                }
+                Err(e) => {
+                    warn!(
+                        bot = %bot_dir.display(),
+                        "venv repoint failed ({e:#}); wiping for full re-sync"
+                    );
+                    reset_sync_state(bot_dir).await;
+                }
+            }
         }
 
         if let Some(parent) = stamp_path.parent() {
@@ -195,6 +225,82 @@ fn venv_python(venv: &Path) -> PathBuf {
     } else {
         venv.join("bin").join("python")
     }
+}
+
+/// True when the venv's python interpreter resolves to an existing
+/// file. `metadata` follows symlinks, so a dangling symlink (the
+/// AppImage mount-changed case) returns Err and we report dead.
+fn venv_python_alive(venv: &Path) -> bool {
+    std::fs::metadata(venv_python(venv))
+        .map(|m| m.is_file())
+        .unwrap_or(false)
+}
+
+/// Repoint a venv at `new_python` without re-running `uv sync`. Used
+/// when the venv was sync'd under a previous AppImage mount whose
+/// `/tmp/.mount_Akagi_<rand>/` path is gone. Rewrites the `bin/python`
+/// symlink and the `home = …` line in `pyvenv.cfg`; everything else in
+/// the venv (site-packages, .pyc) stays valid because
+/// python-build-standalone is binary-identical across launches.
+///
+/// Unix-only — the AppImage failure mode doesn't exist on Windows
+/// (resource dir is stable there).
+#[cfg(unix)]
+async fn repoint_venv(venv: &Path, new_python: &Path) -> Result<()> {
+    let target = tokio::fs::canonicalize(new_python)
+        .await
+        .with_context(|| format!("canonicalize {}", new_python.display()))?;
+    let new_home = target
+        .parent()
+        .with_context(|| format!("python {} has no parent dir", target.display()))?
+        .to_path_buf();
+
+    let py_link = venv_python(venv);
+    // Use symlink_metadata so a dangling symlink is still detected and
+    // removed (plain metadata would error and skip the unlink).
+    if std::fs::symlink_metadata(&py_link).is_ok() {
+        tokio::fs::remove_file(&py_link)
+            .await
+            .with_context(|| format!("remove stale {}", py_link.display()))?;
+    }
+    tokio::fs::symlink(&target, &py_link)
+        .await
+        .with_context(|| format!("symlink {} -> {}", py_link.display(), target.display()))?;
+
+    let cfg_path = venv.join("pyvenv.cfg");
+    if cfg_path.is_file() {
+        let cfg = tokio::fs::read_to_string(&cfg_path)
+            .await
+            .with_context(|| format!("read {}", cfg_path.display()))?;
+        let new_home_str = new_home.display().to_string();
+        let mut rewrote = false;
+        let mut out = String::with_capacity(cfg.len());
+        for line in cfg.lines() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("home") && trimmed.split_once('=').is_some() {
+                out.push_str(&format!("home = {new_home_str}"));
+                rewrote = true;
+            } else {
+                out.push_str(line);
+            }
+            out.push('\n');
+        }
+        if rewrote {
+            tokio::fs::write(&cfg_path, out)
+                .await
+                .with_context(|| format!("write {}", cfg_path.display()))?;
+        }
+    }
+
+    if !venv_python_alive(venv) {
+        bail!("venv python still dead after repoint");
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+async fn repoint_venv(_venv: &Path, _new_python: &Path) -> Result<()> {
+    bail!("venv repoint not supported on this platform")
 }
 
 /// Build target triple — used to pick the right bundled runtime.
@@ -360,6 +466,66 @@ mod tests {
             envs.iter()
                 .any(|(k, v)| *k == OsStr::new("PYTHONPATH") && v.is_none()),
             "PYTHONPATH must be removed (got envs={envs:?})"
+        );
+    }
+
+    /// Regression: under AppImage, every launch creates a new
+    /// `/tmp/.mount_Akagi_<rand>/` mount, and uv bakes that absolute
+    /// path into the venv at sync time. On the next launch the venv's
+    /// `bin/python` symlink target is gone and `cmd.spawn()` returns
+    /// ENOENT, surfacing as `spawn bot mortal: No such file or
+    /// directory` from `runner.rs`. `repoint_venv` must rewrite the
+    /// symlink and `pyvenv.cfg` `home =` line so the venv works again
+    /// without re-running uv sync (which would otherwise re-run on
+    /// every launch and cost minutes).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn repoint_venv_rewrites_symlink_and_pyvenv_cfg() {
+        let tmp = TempDir::new().unwrap();
+        let venv = tmp.path().join(AKAGI_DIR).join(VENV_DIR);
+        let bin = venv.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+
+        // Stale mount path — neither file exists. This mirrors what an
+        // AppImage second-launch venv looks like on disk.
+        let stale = tmp.path().join("mount_OLD/python3");
+        std::os::unix::fs::symlink(&stale, bin.join("python")).unwrap();
+        std::fs::write(
+            venv.join("pyvenv.cfg"),
+            format!(
+                "home = {}\nimplementation = CPython\nversion_info = 3.12.13\n",
+                stale.parent().unwrap().display()
+            ),
+        )
+        .unwrap();
+        assert!(!venv_python_alive(&venv), "stale venv must read as dead");
+
+        // Fresh mount: real python that does exist.
+        let fresh_dir = tmp.path().join("mount_NEW/bin");
+        std::fs::create_dir_all(&fresh_dir).unwrap();
+        let fresh_python = fresh_dir.join("python3");
+        std::fs::write(&fresh_python, b"#!/bin/sh\nexit 0\n").unwrap();
+
+        repoint_venv(&venv, &fresh_python).await.unwrap();
+
+        assert!(
+            venv_python_alive(&venv),
+            "venv python must resolve after repoint"
+        );
+        let new_link = std::fs::read_link(bin.join("python")).unwrap();
+        assert_eq!(
+            new_link,
+            std::fs::canonicalize(&fresh_python).unwrap(),
+            "symlink must point at the canonical fresh python"
+        );
+        let cfg = std::fs::read_to_string(venv.join("pyvenv.cfg")).unwrap();
+        assert!(
+            cfg.contains(&format!("home = {}", fresh_dir.display())),
+            "pyvenv.cfg `home` must be rewritten to the fresh bin dir, got:\n{cfg}"
+        );
+        assert!(
+            !cfg.contains("mount_OLD"),
+            "pyvenv.cfg must not retain the stale mount path, got:\n{cfg}"
         );
     }
 
