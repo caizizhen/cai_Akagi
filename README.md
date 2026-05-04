@@ -142,7 +142,7 @@ https://github.com/user-attachments/assets/2ce7cb71-8b25-4895-a12b-0a638665dcab
 
 | Platform | 4-Player | 3-Player | AutoPlay |
 |---|:---:|:---:|:---:|
-| **Mahjong Soul (Majsoul)** | &check; | &check; | (planned) |
+| **Mahjong Soul (Majsoul)** | &check; | &check; | &check; |
 | **Tenhou** | &check; | &check; | &cross; |
 | **Riichi City** | (planned) | (planned) | &cross; |
 | **Amatsuki** | (planned) | (planned) | &cross; |
@@ -443,14 +443,14 @@ Done in alpha.8:
 - [x] i18n: en / ja / zh-TW / zh-CN, with Setup-wizard language picker
 - [x] Bot install from a GitHub release
 - [x] Chromium capture mode (no CA trust needed)
+- [x] **AutoPlay** (Mahjong Soul first; the bot drives the table
+      autonomously, like the original Akagi's Windows AutoPlay)
 
 Planned:
 
 - [ ] **Riichi City** platform support
 - [ ] **Amatsuki** platform support
 - [ ] **Custom themes** (frontend theming hooks)
-- [ ] **AutoPlay** (Mahjong Soul first; the bot drives the table
-      autonomously, like the original Akagi's Windows AutoPlay)
 - [ ] **Refine Frontend** — tile layout, animations, accessibility
 - [ ] **Tenhou autoplay** (currently observe-only)
 
