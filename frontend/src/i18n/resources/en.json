@@ -312,7 +312,11 @@
       "hover_delay_hint": "Mouse must hover for ≥100ms before mousedown for Mahjong Soul to register a tile click. Lower values risk dropped clicks.",
       "click_hold": "Click hold (ms)",
       "dealer_first_discard_extra_delay": "Dealer first-discard extra delay (ms)",
-      "dealer_first_discard_extra_delay_hint": "Mahjong Soul plays a hand-sort animation when the dealer is dealt all 14 tiles. Clicks during the animation are dropped. ~2000ms covers most devices."
+      "dealer_first_discard_extra_delay_hint": "Mahjong Soul plays a hand-sort animation when the dealer is dealt all 14 tiles. Clicks during the animation are dropped. ~2000ms covers most devices.",
+      "dahai_confirm_samples": "Discard confirmation passes",
+      "dahai_confirm_samples_hint": "Before clicking your discard, Akagi replans this many times and requires the same target tile, hand snapshot, and tile click each time. Runtime enforces at least 5 passes. If they disagree or the click fails, it flushes MJAI and repeats until the discard goes through (with a high safety cap). Default 5. Max 20.",
+      "dahai_confirm_gap": "Discard confirmation gap (ms)",
+      "dahai_confirm_gap_hint": "Delay between discard replan samples so the game tracker and hand layout can settle."
     }
   },
   "setup": {

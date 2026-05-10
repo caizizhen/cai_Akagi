@@ -21,6 +21,7 @@
 
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
+use std::process::Command as StdCommand;
 use std::time::UNIX_EPOCH;
 use tokio::process::Command;
 use tracing::{info, warn};
@@ -92,6 +93,8 @@ impl PythonRuntime {
     /// Run `uv sync` against the bot's `pyproject.toml` if the on-disk
     /// signature has changed since the last successful sync. Idempotent.
     pub async fn ensure_synced(&self, bot_dir: &Path) -> Result<()> {
+        let bot_dir = std::fs::canonicalize(bot_dir)
+            .with_context(|| format!("resolve bot dir {}", bot_dir.display()))?;
         let pyproject = bot_dir.join("pyproject.toml");
         if !pyproject.is_file() {
             bail!(
@@ -132,7 +135,7 @@ impl PythonRuntime {
                         bot = %bot_dir.display(),
                         "venv repoint failed ({e:#}); wiping for full re-sync"
                     );
-                    reset_sync_state(bot_dir).await;
+                    reset_sync_state(&bot_dir).await;
                 }
             }
         }
@@ -147,7 +150,7 @@ impl PythonRuntime {
         sync_cmd
             .arg("sync")
             .arg("--project")
-            .arg(bot_dir)
+            .arg(&bot_dir)
             .env("UV_PYTHON", &self.python)
             .env("UV_PROJECT_ENVIRONMENT", &venv);
         scrub_python_env(&mut sync_cmd);
@@ -241,11 +244,48 @@ fn try_bundled(resource_dir: &Path) -> Option<PythonRuntime> {
 }
 
 fn try_system() -> Result<PythonRuntime> {
-    let python = which::which("python3")
-        .or_else(|_| which::which("python"))
+    let python = windows_py_launcher_python312()
+        .or_else(|| {
+            which::which("python3")
+                .ok()
+                .filter(|p| !is_windows_app_execution_alias(p))
+        })
+        .or_else(|| {
+            which::which("python")
+                .ok()
+                .filter(|p| !is_windows_app_execution_alias(p))
+        })
         .context("locate python3/python on PATH")?;
     let uv = which::which("uv").context("locate uv on PATH")?;
     Ok(PythonRuntime::from_paths(python, uv, RuntimeMode::System))
+}
+
+fn windows_py_launcher_python312() -> Option<PathBuf> {
+    if !cfg!(windows) {
+        return None;
+    }
+
+    let output = StdCommand::new("py")
+        .args(["-3.12", "-c", "import sys; print(sys.executable)"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if path.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(path);
+    path.is_file().then_some(path)
+}
+
+fn is_windows_app_execution_alias(path: &Path) -> bool {
+    cfg!(windows)
+        && path
+            .to_string_lossy()
+            .to_ascii_lowercase()
+            .contains(r"\appdata\local\microsoft\windowsapps\")
 }
 
 fn venv_python(venv: &Path) -> PathBuf {

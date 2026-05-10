@@ -68,6 +68,74 @@ fn resolve_dir_inner(configured: &Path, appimage: bool, user_root: Option<PathBu
     exe_candidate.unwrap_or(cwd_candidate)
 }
 
+/// True if `dir` looks like an Akagi bot root: at least one **registry-eligible**
+/// subdirectory containing `bot.py` (same rules as [`crate::bot::registry::BotRegistry`]).
+fn mjai_bot_root_has_bots(dir: &Path) -> bool {
+    std::fs::read_dir(dir).map_or(false, |mut it| {
+        it.any(|e| {
+            e.ok()
+                .map(|ent| {
+                    let path = ent.path();
+                    if !path.is_dir() {
+                        return false;
+                    }
+                    let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+                        return false;
+                    };
+                    if name.starts_with('.') || name.starts_with("__") || name == "base" {
+                        return false;
+                    }
+                    path.join("bot.py").is_file()
+                })
+                .unwrap_or(false)
+        })
+    })
+}
+
+fn is_default_mjai_bot_relative(configured: &Path) -> bool {
+    strip_leading_dot(configured).as_os_str() == std::path::Path::new("mjai_bot").as_os_str()
+}
+
+/// When running from a Cargo build, the exe is under `target/<profile>/` or
+/// `target/<profile>/deps/` while the repo keeps `mjai_bot/` at the workspace
+/// root — [`resolve_dir`] may pick an empty `target/debug/mjai_bot` if that folder exists.
+pub(crate) fn workspace_mjai_bot_from_exe_path(exe: &Path) -> Option<PathBuf> {
+    let mut cur = exe.parent()?;
+    loop {
+        if cur.file_name()?.to_str()? == "target" {
+            let workspace = cur.parent()?;
+            let candidate = workspace.join("mjai_bot");
+            return candidate.is_dir().then_some(candidate);
+        }
+        cur = cur.parent()?;
+    }
+}
+
+fn workspace_mjai_bot_from_exe() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .as_deref()
+        .and_then(workspace_mjai_bot_from_exe_path)
+}
+
+/// Like [`resolve_dir`] for `bot.dir`, but when the default relative
+/// `mjai_bot` resolves to a directory with **no** `*/bot.py` children, fall
+/// back to `<workspace>/mjai_bot` for the common `cargo run` layout.
+pub fn resolve_mjai_bot_dir(configured: &Path) -> PathBuf {
+    let primary = resolve_dir(configured);
+    if mjai_bot_root_has_bots(&primary) {
+        return primary;
+    }
+    if is_default_mjai_bot_relative(configured) {
+        if let Some(ws) = workspace_mjai_bot_from_exe() {
+            if mjai_bot_root_has_bots(&ws) {
+                return ws;
+            }
+        }
+    }
+    primary
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,6 +175,34 @@ mod tests {
             Some(user_root.clone()),
         );
         assert!(!resolved.starts_with(&user_root));
+    }
+
+    #[test]
+    fn workspace_mjai_bot_from_exe_path_finds_repo_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path();
+        let mjai = workspace.join("mjai_bot");
+        std::fs::create_dir_all(&mjai).unwrap();
+        let exe = workspace.join("target").join("debug").join("akagi.exe");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        std::fs::write(&exe, "").unwrap();
+        assert_eq!(super::workspace_mjai_bot_from_exe_path(&exe).unwrap(), mjai);
+    }
+
+    #[test]
+    fn workspace_mjai_bot_from_exe_path_finds_repo_root_from_deps_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path();
+        let mjai = workspace.join("mjai_bot");
+        std::fs::create_dir_all(&mjai).unwrap();
+        let exe = workspace
+            .join("target")
+            .join("debug")
+            .join("deps")
+            .join("akagi-deadbeef.exe");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        std::fs::write(&exe, "").unwrap();
+        assert_eq!(super::workspace_mjai_bot_from_exe_path(&exe).unwrap(), mjai);
     }
 
     #[test]

@@ -312,7 +312,11 @@
       "hover_delay_hint": "雀魂判定牌面点击需要在 mousedown 前悬停 100ms 以上。低于此值点击可能被吃掉。",
       "click_hold": "按住时间 (ms)",
       "dealer_first_discard_extra_delay": "庄家首打额外延迟 (ms)",
-      "dealer_first_discard_extra_delay_hint": "庄家被发 14 张牌时雀魂会播放整理手牌动画，期间的点击会被吃掉。约 2000ms 可覆盖大多数设备。"
+      "dealer_first_discard_extra_delay_hint": "庄家被发 14 张牌时雀魂会播放整理手牌动画，期间的点击会被吃掉。约 2000ms 可覆盖大多数设备。",
+      "dahai_confirm_samples": "出牌前确认次数",
+      "dahai_confirm_samples_hint": "点击自家打出的牌之前，会重复规划这么多次，且每次算出的目标牌、手牌快照与点击位置必须一致。运行时至少确认 5 次；若不一致或点击失败，会同步 MJAI 后重新走整轮确认，直到出牌成功（有上限防止死循环）。默认 5。最多 20。",
+      "dahai_confirm_gap": "出牌确认间隔 (ms)",
+      "dahai_confirm_gap_hint": "两次出牌规划之间的间隔，便于 tracker 与手牌布局稳定。"
     }
   },
   "setup": {

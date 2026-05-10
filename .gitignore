@@ -3,6 +3,8 @@ __pycache__
 target
 node_modules
 .assets
+probe-dir
+mjai_bot/.downloads/
 
 # Claude
 .claude
@@ -25,6 +27,7 @@ mjai_bot/*/.venv/
 
 # Per-bot user-edited settings (manifest.toml ships with the bot; settings.toml does not)
 mjai_bot/*/settings.toml
+mjai_bot/*/experience.json
 
 # Tauri
 gen/
@@ -33,12 +36,28 @@ gen/
 runtime/*
 !runtime/.gitkeep
 
-# util
-mjai_bot/mortal*
+# Mortal runtime bots: keep source/model/libriichi in git/LFS, ignore generated envs and user state.
+mjai_bot/*/__pycache__/
+
+# Mortal self-training (upstream clone + bulky artifacts)
+third_party/Mortal/
+third_party/tenhou-to-mjai/
+training/
+scripts/evaluate_example_bot.py
+scripts/fetch-all-public-mjai-corpora.ps1
+scripts/fetch-tenhou-mjai-dataset.ps1
+scripts/gzip_mjai_logs.py
+scripts/migrate-mortal-legacy-data.ps1
+scripts/prep-majsoul-toolchain.ps1
+scripts/prep-mortal-training.ps1
+scripts/rehydrate-corpora-year-from-archive.ps1
+scripts/resume-staging-move.ps1
+scripts/write-mortal-training-config.ps1
 
 # Locally-built bot release artifacts
 mortal.zip
 *.bot.zip
+mjai_bot/mortal/mortal_backup.pth
 tests/mortal_zip_layout.rs
 
 # Test

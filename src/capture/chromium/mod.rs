@@ -19,6 +19,7 @@ pub mod profile;
 use super::{CaptureBackend, CaptureCtx, CaptureDescriptor, CaptureKind, ShutdownToken};
 use crate::capture::flow::FlowBridges;
 use crate::config::ChromiumConfig;
+use crate::event_bus::NotifyBus;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::path::PathBuf;
@@ -33,49 +34,92 @@ impl ChromiumBackend {
     pub fn new(cfg: ChromiumConfig) -> Self {
         Self { cfg }
     }
+}
 
-    /// Resolve the chrome executable. Resolution order:
-    /// 1. Explicit `cfg.executable` if set (must exist).
-    /// 2. If `force_cft = false`: first auto-detected system browser.
-    /// 3. Installed Chrome-for-Testing (latest version, or pinned via
-    ///    `cfg.cft_channel` if a literal version is installed).
-    /// 4. Error pointing the user at the Settings UI to install CfT.
-    fn resolve_executable(&self) -> Result<PathBuf> {
-        if !self.cfg.executable.is_empty() {
-            let p = PathBuf::from(&self.cfg.executable);
-            if !p.exists() {
-                anyhow::bail!(
-                    "configured chromium executable does not exist: {}",
-                    p.display()
-                );
-            }
-            return Ok(p);
+/// Pick the browser binary to launch for Chromium capture.
+///
+/// 1. Explicit `cfg.executable` if set (must exist).
+/// 2. Installed Chrome-for-Testing when present (stable CDP with chromiumoxide).
+/// 3. Otherwise download CfT once ([`cft::install`]); on failure, if
+///    `force_cft` is false fall back to the first system browser; if true,
+///    return an error.
+async fn resolve_launch_executable(cfg: &ChromiumConfig, notify: &NotifyBus) -> Result<PathBuf> {
+    if !cfg.executable.is_empty() {
+        let p = PathBuf::from(&cfg.executable);
+        if !p.exists() {
+            anyhow::bail!(
+                "configured chromium executable does not exist: {}",
+                p.display()
+            );
         }
-
-        if !self.cfg.force_cft {
-            if let Some(b) = detect::detect_system_browsers().into_iter().next() {
-                return Ok(b.path);
-            }
-        }
-
-        let pinned = cft::Channel::parse(&self.cfg.cft_channel);
-        if let Some(exe) = cft::installed_executable(&pinned) {
-            return Ok(exe);
-        }
-
-        anyhow::bail!(
-            "no Chromium-family browser detected and no Chrome-for-Testing installed. \
-             Open Settings → Capture and click Download to install Chrome for Testing, \
-             or set capture.chromium.executable explicitly."
-        )
+        return Ok(p);
     }
+
+    let pinned = cft::Channel::parse(&cfg.cft_channel);
+
+    if let Some(cft_exe) = cft::installed_executable(&pinned) {
+        info!(
+            "chromium capture: using Chrome-for-Testing at {}",
+            cft_exe.display()
+        );
+        return Ok(cft_exe);
+    }
+
+    info!(
+        "Chrome-for-Testing not installed; downloading stable channel for capture (~150 MB). \
+         To use another browser instead, set capture.chromium.executable in config."
+    );
+
+    match cft::install(&pinned, notify).await {
+        Ok(_) => {}
+        Err(e) if !cfg.force_cft => {
+            warn!(
+                "Chrome-for-Testing download/install failed: {e:#}; falling back to system browser \
+                 (recent Google Chrome may break CDP — install CfT from Settings → Capture when online)"
+            );
+        }
+        Err(e) => {
+            return Err(e).context(
+                "Chrome-for-Testing is required (force_cft) but automatic install failed; \
+                 fix network or install from Settings → Capture",
+            );
+        }
+    }
+
+    if let Some(cft_exe) = cft::installed_executable(&pinned) {
+        info!(
+            "chromium capture: using Chrome-for-Testing at {}",
+            cft_exe.display()
+        );
+        return Ok(cft_exe);
+    }
+
+    if cfg.force_cft {
+        anyhow::bail!(
+            "Chrome-for-Testing is required (force_cft) but no usable install was found after download. \
+             Open Settings → Capture to install manually, or set capture.chromium.force_cft to false."
+        );
+    }
+
+    if let Some(b) = detect::detect_system_browsers().into_iter().next() {
+        warn!(
+            "chromium capture: using system browser at {}",
+            b.path.display()
+        );
+        return Ok(b.path);
+    }
+
+    anyhow::bail!(
+        "no Chromium-family browser detected and Chrome-for-Testing could not be installed. \
+         Open Settings → Capture to install Chrome for Testing, or set capture.chromium.executable."
+    )
 }
 
 #[async_trait]
 impl CaptureBackend for ChromiumBackend {
     async fn run(self: Box<Self>, ctx: CaptureCtx, shutdown: ShutdownToken) -> Result<()> {
-        let exe = self
-            .resolve_executable()
+        let exe = resolve_launch_executable(&self.cfg, &ctx.notify_bus)
+            .await
             .context("resolving chromium executable")?;
         let profile_dir = profile::resolve_profile_dir(&self.cfg.user_data_dir)?;
         std::fs::create_dir_all(&profile_dir)

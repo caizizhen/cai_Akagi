@@ -259,12 +259,7 @@ impl TenhouBridge {
     /// `<D7/>`, `<E/>`, `<f12/>` — dahai.
     /// `tsumogiri_uppercase` is true when the tag's leading letter is uppercase
     /// (Tenhou's signal that the discard is just-drawn).
-    fn on_dahai(
-        &mut self,
-        actor_rel: u8,
-        tag: &str,
-        tsumogiri_uppercase: bool,
-    ) -> Vec<MjaiEvent> {
+    fn on_dahai(&mut self, actor_rel: u8, tag: &str, tsumogiri_uppercase: bool) -> Vec<MjaiEvent> {
         if actor_rel >= self.state.num_players {
             return Vec::new();
         }
@@ -364,14 +359,22 @@ impl TenhouBridge {
                 actor,
                 target,
                 pai,
-                consumed: [consumed[0].clone(), consumed[1].clone(), consumed[2].clone()],
+                consumed: [
+                    consumed[0].clone(),
+                    consumed[1].clone(),
+                    consumed[2].clone(),
+                ],
             },
             MeldKind::Kakan => {
                 self.state.last_revealed_tile_actor = Some(actor); // chankan target
                 MjaiEvent::Kakan {
                     actor,
                     pai,
-                    consumed: [consumed[0].clone(), consumed[1].clone(), consumed[2].clone()],
+                    consumed: [
+                        consumed[0].clone(),
+                        consumed[1].clone(),
+                        consumed[2].clone(),
+                    ],
                 }
             }
             MeldKind::Ankan => MjaiEvent::Ankan {
@@ -409,11 +412,13 @@ impl TenhouBridge {
         }
         let actor = self.state.rel_to_abs(actor_rel);
         // step arrives as a string in the Python reference (`message['step'] == '1'`).
-        let step = msg
-            .get("step")
-            .and_then(|v| v.as_str().and_then(|s| s.parse::<u8>().ok()).or(v.as_u64().map(|n| n as u8)));
+        let step = msg.get("step").and_then(|v| {
+            v.as_str()
+                .and_then(|s| s.parse::<u8>().ok())
+                .or(v.as_u64().map(|n| n as u8))
+        });
         let events = match step {
-            Some(1) => vec![MjaiEvent::Reach { actor, pai: None }],
+            Some(1) => vec![MjaiEvent::reach_from_bridge(actor, None)],
             Some(2) => {
                 if actor == self.state.seat {
                     self.state.in_riichi = true;
@@ -936,7 +941,10 @@ mod tests {
         );
         let e1 = parse_one(&mut b, r#"{"tag":"REACH","who":"0","step":"1"}"#);
         assert!(matches!(e1[0], MjaiEvent::Reach { actor: 0, .. }));
-        let e2 = parse_one(&mut b, r#"{"tag":"REACH","who":"0","step":"2","ten":"240,250,250,260"}"#);
+        let e2 = parse_one(
+            &mut b,
+            r#"{"tag":"REACH","who":"0","step":"2","ten":"240,250,250,260"}"#,
+        );
         assert!(matches!(e2[0], MjaiEvent::ReachAccepted { actor: 0 }));
     }
 

@@ -31,6 +31,11 @@ pub struct BotResponse {
     pub action: MjaiEvent,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<serde_json::Value>,
+    /// In-process sequence number of the mjai event that triggered this
+    /// response. Not part of the bot wire protocol; the autoplay manager uses
+    /// it to reject stale decisions that arrive after later game events.
+    #[serde(skip)]
+    pub trigger_seq: Option<u64>,
 }
 
 #[cfg(test)]
@@ -83,6 +88,7 @@ mod tests {
                 tsumogiri: true,
             },
             meta: None,
+            trigger_seq: None,
         };
         let out = serde_json::to_string(&resp).unwrap();
         assert!(

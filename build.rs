@@ -1,6 +1,13 @@
 use std::{env, path::PathBuf};
 
 fn main() {
+    if env::var_os("PROTOC").is_none() {
+        env::set_var(
+            "PROTOC",
+            protoc_bin_vendored::protoc_bin_path().expect("vendored protoc for this platform"),
+        );
+    }
+
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
 
     prost_build::Config::new()

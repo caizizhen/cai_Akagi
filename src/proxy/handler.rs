@@ -216,6 +216,12 @@ impl WebSocketHandler for ProxyHandler {
             }
         }
 
+        let close_events = {
+            let mut b = bridge.lock().expect("bridge mutex poisoned");
+            b.on_close()
+        };
+        self.dispatch_events('x', &server_uri.to_string(), close_events);
+
         self.release_bridge(client, bridge);
     }
 }
@@ -262,7 +268,13 @@ impl ProxyHandler {
                     let mut b = bridge.lock().expect("bridge mutex poisoned");
                     b.parse(dir, buf)
                 };
-                self.record_frame(client, dir, FrameRaw::Text(t.to_string()), buf.len(), &result);
+                self.record_frame(
+                    client,
+                    dir,
+                    FrameRaw::Text(t.to_string()),
+                    buf.len(),
+                    &result,
+                );
                 self.dispatch_events(dir_arrow, &uri, result.events);
             }
             Message::Close(_) => debug!("{dir_arrow} {uri} close"),

@@ -88,6 +88,12 @@ impl GameTracker {
     pub fn handle(&mut self, ev: &AkagiEvent) -> Result<()> {
         self.events_seen += 1;
 
+        if matches!(ev, AkagiEvent::EndGame) {
+            self.state = None;
+            self.our_seat = None;
+            return Ok(());
+        }
+
         if let AkagiEvent::StartGame {
             id, num_players, ..
         } = ev
@@ -390,6 +396,21 @@ mod tests {
         assert_eq!(second.oya, 0, "fresh state defaults to oya=0");
     }
 
+    #[test]
+    fn end_game_clears_live_state_and_seat() {
+        let mut t = GameTracker::new();
+        t.handle(&start_game_with_seat(Some(0))).unwrap();
+        t.handle(&start_kyoku(0)).unwrap();
+        assert!(t.snapshot().is_some());
+        assert_eq!(t.our_seat(), Some(0));
+
+        t.handle(&AkagiEvent::EndGame).unwrap();
+
+        assert!(t.snapshot().is_none());
+        assert!(t.state().is_none());
+        assert_eq!(t.our_seat(), None);
+    }
+
     fn start_game_with_seat(seat: Option<u8>) -> AkagiEvent {
         AkagiEvent::StartGame {
             names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
@@ -468,7 +489,7 @@ mod tests {
             pai: "3m".into(),
         })
         .unwrap();
-        t.handle(&AkagiEvent::Reach { actor: 0, pai: None }).unwrap();
+        t.handle(&AkagiEvent::reach_from_bridge(0, None)).unwrap();
         t.handle(&AkagiEvent::Dahai {
             actor: 0,
             pai: "1m".into(),

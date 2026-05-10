@@ -312,7 +312,11 @@
       "hover_delay_hint": "雀魂が牌のクリックを認識するには、mousedown前に100ms以上のホバーが必要です。短すぎるとクリックが無視されます。",
       "click_hold": "ボタン押下保持 (ms)",
       "dealer_first_discard_extra_delay": "親の初打追加待機 (ms)",
-      "dealer_first_discard_extra_delay_hint": "雀魂は親に14枚配られた後に手牌整列アニメーションを再生し、その間のクリックは無視されます。2000ms前後でほぼ吸収できます。"
+      "dealer_first_discard_extra_delay_hint": "雀魂は親に14枚配られた後に手牌整列アニメーションを再生し、その間のクリックは無視されます。2000ms前後でほぼ吸収できます。",
+      "dahai_confirm_samples": "打牌前の確認回数",
+      "dahai_confirm_samples_hint": "自家の打牌をクリックする前に、この回数だけ再計画し、毎回同じ対象牌、手牌スナップショット、クリック位置に一致する必要があります。実行時は最低5回確認します。不一致やクリック失敗時はMJAIを流し込み、出牌が通るまでサイクルを繰り返します（安全のため上限あり）。既定は5。最大20。",
+      "dahai_confirm_gap": "打牌確認の間隔 (ms)",
+      "dahai_confirm_gap_hint": "再計画サンプル間の待機時間。トラッカーと手牌表示の安定用。"
     }
   },
   "setup": {

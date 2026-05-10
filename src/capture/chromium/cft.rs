@@ -16,12 +16,12 @@
 //!   (or `chrome-mac-x64/...` on Intel)
 //! - Windows: `chrome-win64\chrome.exe`
 //!
-//! Triggers (per design):
-//! - Settings UI button (explicit)
-//! - First-run wizard button (explicit)
-//! - **Never** automatic on supervisor start — if no system browser AND
-//!   no CfT installed, the supervisor surfaces a notification and
-//!   refuses to start. The user clicks Download themselves.
+//! Triggers:
+//! - Settings UI / first-run wizard (explicit).
+//! - Chromium capture backend: when `capture.chromium.executable` is empty
+//!   and no CfT is on disk, [`crate::capture::chromium::ChromiumBackend`]
+//!   calls [`install`] once before launch so CDP matches a known-good browser.
+//!   (Users who pin `executable` or pre-install CfT skip the download.)
 
 use crate::event_bus::NotifyBus;
 use crate::schema::Notification;
@@ -83,9 +83,7 @@ pub fn cft_platform() -> Option<&'static str> {
 /// AppImage / read-only mounts the resolver falls back to
 /// `<user_config_root>/chrome-for-testing/`.
 pub fn install_root() -> Result<PathBuf> {
-    Ok(crate::util::resolve_dir(Path::new(
-        "./chrome-for-testing",
-    )))
+    Ok(crate::util::resolve_dir(Path::new("./chrome-for-testing")))
 }
 
 /// Per-version install dir: `<install_root>/<version>/`.
@@ -385,15 +383,15 @@ fn installed_chrome_exists(install_dir: &Path) -> bool {
 /// binary behind. macOS Gatekeeper blocks unsigned binaries with the
 /// quarantine xattr — strip it so first launch doesn't show a
 /// "cannot verify developer" prompt.
-fn post_extract_fixup(exe: &Path, install_dir: &Path) {
+fn post_extract_fixup(_exe: &Path, install_dir: &Path) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(exe) {
+        if let Ok(meta) = std::fs::metadata(_exe) {
             let mut perms = meta.permissions();
             // Add user/group/other execute bits without dropping read/write.
             perms.set_mode(perms.mode() | 0o111);
-            let _ = std::fs::set_permissions(exe, perms);
+            let _ = std::fs::set_permissions(_exe, perms);
         }
     }
     if cfg!(target_os = "macos") {

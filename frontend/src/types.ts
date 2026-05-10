@@ -104,6 +104,9 @@ export type MajsoulAutoplayConfig = {
   hover_delay_ms: number
   click_hold_ms: number
   dealer_first_discard_extra_delay_ms: number
+  /** Runtime enforces at least 5 own-discard confirmation passes. */
+  dahai_confirm_samples: number
+  dahai_confirm_gap_ms: number
 }
 
 export type AutoplayConfig = {

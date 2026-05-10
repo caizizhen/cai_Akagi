@@ -40,6 +40,12 @@ pub struct MajsoulAutoplayConfig {
     /// opt out (e.g. on a fast box where the animation finishes inside
     /// the regular pre-click delay anyway).
     pub dealer_first_discard_extra_delay_ms: u32,
+    /// Before clicking our own discard tile, re-plan this many times; every
+    /// sample must pick the same canvas click or the click is skipped.
+    /// Default `5`. Runtime enforces at least 5 for own discards.
+    pub dahai_confirm_samples: u32,
+    /// Pause between discard confirmation samples (ms) so tracker/UI can settle.
+    pub dahai_confirm_gap_ms: u32,
 }
 
 impl Default for MajsoulAutoplayConfig {
@@ -51,6 +57,8 @@ impl Default for MajsoulAutoplayConfig {
             hover_delay_ms: 150,
             click_hold_ms: 50,
             dealer_first_discard_extra_delay_ms: 2000,
+            dahai_confirm_samples: 5,
+            dahai_confirm_gap_ms: 120,
         }
     }
 }

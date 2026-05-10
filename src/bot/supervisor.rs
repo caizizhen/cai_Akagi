@@ -35,7 +35,7 @@ pub async fn run_bot_manager(
     runtime: Option<PythonRuntime>,
     syncs_in_flight: Arc<Mutex<HashSet<String>>>,
 ) -> Result<()> {
-    let bot_dir = util::resolve_dir(Path::new(&cfg.dir));
+    let bot_dir = util::resolve_mjai_bot_dir(Path::new(&cfg.dir));
     // Diagnostic-only: warn early if the configured bots aren't present
     // *now*. The manager rescans on every spawn so a bot installed after
     // this point is still picked up — the warning here is just to surface

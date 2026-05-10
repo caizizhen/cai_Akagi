@@ -81,7 +81,8 @@ pub struct ActionContext<'a> {
 pub struct PlanResult {
     pub steps: Vec<Step>,
     /// When `true`, the manager should send a synthetic
-    /// `MjaiEvent::Reach { actor: our_seat, pai: None }` onto MjaiBus
+    /// [`crate::schema::MjaiEvent::reach_prompt_riichi_dahai`] onto MjaiBus
+    /// so the bot manager flushes immediately for the declaration `dahai`.
     /// after the steps run, and transition `ReachState` to
     /// `AwaitingDahai`. Set only when the bot's `Reach` event omits
     /// `pai` and the platform needs a follow-up dahai.

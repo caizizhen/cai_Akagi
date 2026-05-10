@@ -31,7 +31,7 @@ export function ManifestField({
 }
 
 function renderInput(
-  _key: string,
+  fieldKey: string,
   spec: FieldSpec,
   value: unknown,
   onChange: (v: unknown) => void,
@@ -48,7 +48,7 @@ function renderInput(
           <SelectContent>
             {(spec.choices ?? []).map((c) => (
               <SelectItem key={c} value={c}>
-                {c}
+                {choiceLabel(fieldKey, c)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -79,4 +79,17 @@ function renderInput(
         />
       )
   }
+}
+
+function choiceLabel(fieldKey: string, value: string) {
+  if (fieldKey === 'play_style') {
+    const labels: Record<string, string> = {
+      aggressive: '\u6fc0\u8fdb\u6a21\u5f0f',
+      balanced: '\u5e73\u8861\u6a21\u5f0f',
+      conservative: '\u4fdd\u5b88\u6a21\u5f0f',
+      tanyao_fast: '\u65ad\u5e7a\u4e5d\u901f\u653b',
+    }
+    return labels[value] ?? value
+  }
+  return value
 }

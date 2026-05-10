@@ -27,6 +27,7 @@ use tile::{compare_pai, ms_to_mjai};
 use tracing::{info, warn};
 
 const METHOD_AUTH_GAME: &str = ".lq.FastTest.authGame";
+const METHOD_SYNC_GAME: &str = ".lq.FastTest.syncGame";
 const METHOD_ACTION_PROTOTYPE: &str = ".lq.ActionPrototype";
 const METHOD_NOTIFY_GAME_END_RESULT: &str = ".lq.NotifyGameEndResult";
 const ACTION_NEW_ROUND: &str = "ActionNewRound";
@@ -120,6 +121,10 @@ pub struct MajsoulBridge {
     /// `authGame` response. Defaults to 4 so per-flow code that runs before
     /// auth (none today, but be defensive) sees a sane value.
     num_players: u8,
+    /// True after emitting `start_game` until a terminal `end_game` or the
+    /// WebSocket closes. Used to stop autoplay promptly when the user leaves
+    /// the table before Majsoul sends a normal game-end notify.
+    mjai_stream_open: bool,
 }
 
 impl MajsoulBridge {
@@ -137,6 +142,7 @@ impl MajsoulBridge {
             last_revealed_tile_actor: None,
             pending_reach_accepted: None,
             num_players: 4,
+            mjai_stream_open: false,
         }
     }
 
@@ -196,6 +202,9 @@ impl MajsoulBridge {
             }
             (MessageType::Response, METHOD_AUTH_GAME) => {
                 self.handle_auth_game_response(&msg.payload)
+            }
+            (MessageType::Response, METHOD_SYNC_GAME) => {
+                self.handle_sync_game_response(&msg.payload)
             }
             (MessageType::Notify, METHOD_ACTION_PROTOTYPE) => self.handle_action_prototype(msg),
             (MessageType::Notify, METHOD_NOTIFY_GAME_END_RESULT) => {
@@ -282,6 +291,37 @@ impl MajsoulBridge {
     /// When this deal is the rinshan after a kan, the new dora marker
     /// arrives in `data.doras`. Timing depends on the kan type set by the
     /// preceding meld action (see `DoraTiming`).
+    fn handle_sync_game_response(&mut self, payload: &JsonValue) -> Vec<MjaiEvent> {
+        let Some(actions) = payload
+            .pointer("/game_restore/actions")
+            .and_then(JsonValue::as_array)
+        else {
+            return Vec::new();
+        };
+        if actions.is_empty() {
+            return Vec::new();
+        }
+
+        info!(
+            target: "akagi::bridge::majsoul",
+            "replaying {} actions from syncGame restore",
+            actions.len()
+        );
+
+        let mut events = Vec::new();
+        for action in actions {
+            let Some(msg) = restored_action_msg(action) else {
+                warn!(
+                    target: "akagi::bridge::majsoul",
+                    "syncGame restore action missing/invalid name or data: {action}"
+                );
+                continue;
+            };
+            events.extend(self.handle_action_prototype(&msg));
+        }
+        events
+    }
+
     fn build_tsumo(&mut self, data: &JsonValue) -> Result<Vec<MjaiEvent>> {
         let self_seat = self.seat.context("seat unresolved at ActionDealTile")?;
         let actor = data.get("seat").and_then(JsonValue::as_u64).unwrap_or(0) as Actor;
@@ -384,7 +424,7 @@ impl MajsoulBridge {
             });
         }
         if is_riichi {
-            events.push(MjaiEvent::Reach { actor, pai: None });
+            events.push(MjaiEvent::reach_from_bridge(actor, None));
         }
         events.push(MjaiEvent::Dahai {
             actor,
@@ -1044,6 +1084,35 @@ fn names_from_payload(payload: &JsonValue, seat_list: &[JsonValue]) -> Vec<Strin
         .collect()
 }
 
+fn restored_action_msg(action: &JsonValue) -> Option<ParsedMessage> {
+    let name = action.get("name").and_then(JsonValue::as_str)?;
+    let data = action.get("data")?;
+    let data = if let Some(b64) = data.as_str() {
+        match parser::decode_action(name, b64) {
+            Ok(decoded) => decoded,
+            Err(e) => {
+                warn!(
+                    target: "akagi::bridge::majsoul",
+                    "failed to decode syncGame restore action {name}: {e:#}"
+                );
+                return None;
+            }
+        }
+    } else {
+        data.clone()
+    };
+    Some(ParsedMessage {
+        msg_type: MessageType::Notify,
+        msg_id: None,
+        method_name: Arc::from(METHOD_ACTION_PROTOTYPE),
+        payload: json!({
+            "step": action.get("step").cloned().unwrap_or(JsonValue::Null),
+            "name": name,
+            "data": data,
+        }),
+    })
+}
+
 impl Default for MajsoulBridge {
     fn default() -> Self {
         Self::new(None, None)
@@ -1104,6 +1173,7 @@ impl Bridge for MajsoulBridge {
                 {
                     self.rotate_mjai_log();
                 }
+                self.update_mjai_stream_lifecycle(&events);
                 self.write_mjai(&events);
                 ParseResult { events, parsed }
             }
@@ -1131,6 +1201,30 @@ impl Bridge for MajsoulBridge {
 
     fn build(&mut self, _command: &MjaiEvent) -> Option<Vec<u8>> {
         None
+    }
+
+    fn on_close(&mut self) -> Vec<MjaiEvent> {
+        if !self.mjai_stream_open {
+            return Vec::new();
+        }
+        self.mjai_stream_open = false;
+        self.pending_reach_accepted = None;
+        self.dora_timing = None;
+        self.deferred_dora = None;
+        self.last_revealed_tile_actor = None;
+        vec![MjaiEvent::EndGame]
+    }
+}
+
+impl MajsoulBridge {
+    fn update_mjai_stream_lifecycle(&mut self, events: &[MjaiEvent]) {
+        for ev in events {
+            match ev {
+                MjaiEvent::StartGame { .. } => self.mjai_stream_open = true,
+                MjaiEvent::EndGame => self.mjai_stream_open = false,
+                _ => {}
+            }
+        }
     }
 }
 
@@ -1741,6 +1835,61 @@ mod tests {
             method_name: Arc::from(METHOD_ACTION_PROTOTYPE),
             payload: json!({ "step": 1, "name": name, "data": data }),
         }
+    }
+
+    /// Reconnect restore uses a syncGame response carrying ActionPrototype
+    /// history. Replaying it rebuilds the mjai state after disconnects.
+    #[test]
+    fn sync_game_restore_replays_action_history() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.dispatch(&req(METHOD_AUTH_GAME, json!({ "account_id": 50 })));
+        bridge.dispatch(&resp(
+            METHOD_AUTH_GAME,
+            json!({
+                "players": [{ "account_id": 50, "nickname": "me" }],
+                "seat_list": [1u64, 50u64, 2u64, 3u64],
+            }),
+        ));
+
+        let events = bridge.dispatch(&resp(
+            METHOD_SYNC_GAME,
+            json!({
+                "step": 2,
+                "game_restore": {
+                    "actions": [
+                        {
+                            "step": 1,
+                            "name": ACTION_NEW_ROUND,
+                            "data": {
+                                "chang": 0,
+                                "ju": 0,
+                                "ben": 0,
+                                "liqibang": 0,
+                                "doras": ["4s"],
+                                "scores": [25000, 25000, 25000, 25000],
+                                "tiles": ["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"]
+                            }
+                        },
+                        {
+                            "step": 2,
+                            "name": ACTION_DEAL_TILE,
+                            "data": { "left_tile_count": 68, "seat": 1, "tile": "5m" }
+                        }
+                    ]
+                }
+            }),
+        ));
+
+        assert_eq!(events.len(), 3);
+        assert!(matches!(events[0], MjaiEvent::StartKyoku { .. }));
+        assert!(matches!(
+            &events[1],
+            MjaiEvent::Tsumo { actor: 0, pai } if pai == "?"
+        ));
+        assert!(matches!(
+            &events[2],
+            MjaiEvent::Tsumo { actor: 1, pai } if pai == "5m"
+        ));
     }
 
     /// Other player's draw — server omits the tile field. We must emit
@@ -3072,6 +3221,24 @@ mod tests {
 
     /// State must reset on a new kyoku — a stray `deferred_dora` from the
     /// previous round can't leak into the next.
+    #[test]
+    fn websocket_close_after_start_game_emits_end_game_once() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.dispatch(&req(METHOD_AUTH_GAME, json!({ "account_id": 12345 })));
+        let events = bridge.dispatch(&resp(
+            METHOD_AUTH_GAME,
+            json!({
+                "players": [{ "account_id": 12345, "nickname": "player_a" }],
+                "seat_list": [12345u64, 2, 3, 4],
+            }),
+        ));
+        bridge.update_mjai_stream_lifecycle(&events);
+
+        let close_events = bridge.on_close();
+        assert_eq!(close_events, vec![MjaiEvent::EndGame]);
+        assert!(bridge.on_close().is_empty());
+    }
+
     #[test]
     fn start_kyoku_resets_dora_state() {
         let mut bridge = MajsoulBridge::new(None, None);

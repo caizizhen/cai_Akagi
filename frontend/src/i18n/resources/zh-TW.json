@@ -312,7 +312,11 @@
       "hover_delay_hint": "雀魂判定牌面點擊需要在 mousedown 前停留 100ms 以上。低於此值點擊可能被吃掉。",
       "click_hold": "按住時間 (ms)",
       "dealer_first_discard_extra_delay": "莊家初打額外延遲 (ms)",
-      "dealer_first_discard_extra_delay_hint": "莊家被發 14 張牌時雀魂會播放整理手牌動畫，期間的點擊會被吃掉。約 2000ms 可覆蓋一般裝置。"
+      "dealer_first_discard_extra_delay_hint": "莊家被發 14 張牌時雀魂會播放整理手牌動畫，期間的點擊會被吃掉。約 2000ms 可覆蓋一般裝置。",
+      "dahai_confirm_samples": "出牌前確認次數",
+      "dahai_confirm_samples_hint": "點擊自家打出的牌之前，會重複規劃這麼多次，且每次算出的目標牌、手牌快照與點擊位置必須一致。執行時至少確認 5 次；若不一致或點擊失敗，會同步 MJAI 後重新走整輪確認，直到出牌成功（有上限防止無限重試）。預設 5。最多 20。",
+      "dahai_confirm_gap": "出牌確認間隔 (ms)",
+      "dahai_confirm_gap_hint": "兩次出牌規劃之間的間隔，便於 tracker 與手牌版面穩定。"
     }
   },
   "setup": {

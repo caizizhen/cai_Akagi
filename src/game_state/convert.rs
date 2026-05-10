@@ -30,6 +30,13 @@ pub fn to_riichienv(ev: &AkagiEvent) -> Result<Option<RiEvent>> {
 
     let mut v = serde_json::to_value(ev).context("serialize akagi mjai event")?;
 
+    // Strip Akagi-only extensions riichienv does not understand.
+    if v.get("type").and_then(Value::as_str) == Some("reach") {
+        if let Some(obj) = v.as_object_mut() {
+            obj.remove("akagi_flush_bot");
+        }
+    }
+
     // Patch StartGame.id: Akagi `u8` → riichienv `String`.
     if v.get("type").and_then(Value::as_str) == Some("start_game") {
         if let Some(id) = v.get_mut("id") {
@@ -58,6 +65,15 @@ mod tests {
     #[test]
     fn none_returns_none() {
         assert!(to_riichienv(&AkagiEvent::None).unwrap().is_none());
+    }
+
+    #[test]
+    fn reach_akagi_flush_bot_stripped_for_riichienv() {
+        let ev = AkagiEvent::reach_prompt_riichi_dahai(0);
+        assert!(
+            to_riichienv(&ev).unwrap().is_some(),
+            "extension field must not break riichienv deserialize"
+        );
     }
 
     #[test]

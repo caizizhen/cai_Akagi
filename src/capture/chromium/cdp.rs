@@ -28,7 +28,6 @@ use crate::inspector::InspectorWriter;
 use crate::schema::{FrameDirection, FrameRaw, InspectorEntry};
 use anyhow::{anyhow, Context, Result};
 use base64::Engine;
-use chrono::Local;
 use chromiumoxide::page::Page;
 use chromiumoxide::{
     cdp::browser_protocol::network::{
@@ -37,6 +36,7 @@ use chromiumoxide::{
     },
     Browser,
 };
+use chrono::Local;
 use futures_util::StreamExt;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -371,14 +371,16 @@ async fn attach_page(
                     let bridge = bridges.acquire(key.clone(), "ws", "ws frame");
                     bridges.release(&key, bridge);
 
-                    // If this is the autoplay-target WS, drop our hold
-                    // on the page handle. The next reconnection (game
-                    // restart, network blip) re-binds it from `on_created`.
-                    if let (Some(ctx), Some(req)) = (&autoplay, &autoplay_request_id) {
+                    // Keep the page handle even when one Majsoul WebSocket closes.
+                    // The game can rotate route/gateway sockets mid-hand while the
+                    // browser tab is still alive; clearing the handle here makes
+                    // autoplay discard valid bot actions until the next bind.
+                    if let Some(req) = &autoplay_request_id {
                         if *req == *ev.request_id.inner() {
-                            *ctx.page.write().await = None;
                             autoplay_request_id = None;
-                            debug!("autoplay: page handle cleared on WS close for target {target_id}");
+                            debug!(
+                                "autoplay: WS closed for target {target_id}; keeping page handle"
+                            );
                         }
                     }
                 }
@@ -501,7 +503,10 @@ mod tests {
     fn binary_frame_base64_decodes() {
         let raw = b"\x00\x01\x02hello";
         let b64 = base64::engine::general_purpose::STANDARD.encode(raw);
-        assert_eq!(decode_frame_payload(2, &b64), FrameDecode::Bytes(raw.to_vec()));
+        assert_eq!(
+            decode_frame_payload(2, &b64),
+            FrameDecode::Bytes(raw.to_vec())
+        );
     }
 
     #[test]
@@ -509,7 +514,10 @@ mod tests {
         // Distinguished from `Skip` so the inline branch can WARN —
         // legit malformed CDP from Chrome shouldn't be confused with
         // an intentionally-ignored control frame.
-        assert_eq!(decode_frame_payload(2, "not base64!@#"), FrameDecode::BadBase64);
+        assert_eq!(
+            decode_frame_payload(2, "not base64!@#"),
+            FrameDecode::BadBase64
+        );
     }
 
     #[test]

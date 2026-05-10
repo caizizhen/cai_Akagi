@@ -1,0 +1,34 @@
+manifest_version = 1
+
+[bot]
+name             = "mortal3p"
+display          = "Mortal (3P)"
+description      = "Sanma (3P) variant of Mortal — deep-RL mahjong bot for 3-player tables. Wraps libriichi3p (precompiled) + PyTorch."
+version          = "0.1.0"
+supported_modes  = ["3p"]
+
+[settings.play_style]
+type    = "enum"
+label   = "Play style"
+default = "balanced"
+choices = ["aggressive", "balanced", "conservative", "tanyao_fast"]
+help    = "Aggressive: push value and big hands. Balanced: avoid riichi and weigh risk/reward. Conservative: prioritize defence. Tanyao fast: open simple tiles and race to the fastest tanyao win."
+
+[settings.online]
+type    = "bool"
+label   = "Online Inference"
+default = false
+help    = "When enabled, react_batch is delegated to the 3p endpoint on the server below. Falls back to local model on request failure."
+
+[settings.server]
+type    = "string"
+label   = "API Server URL"
+default = "http://server.akagiot.org/"
+help    = "Endpoint exposing /react_batch_3p. Used only when Online Inference is on."
+
+[settings.api_key]
+type    = "string"
+label   = "API Key"
+secret  = true
+default = ""
+help    = "Sent in the Authorization header on every /react_batch_3p request."

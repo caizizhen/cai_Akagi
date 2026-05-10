@@ -55,12 +55,12 @@ pub fn ms_to_mjai(ms: &str) -> Result<&'static str> {
 }
 
 /// Index of `pai` in mjai canonical order (smallest first):
-/// `1m..4m, 5mr, 5m..9m, 1p..4p, 5pr, 5p..9p, 1s..4s, 5sr, 5s..9s, E S W N P F C, ?`.
+/// `1m..5m, 5mr, 6m..9m, 1p..5p, 5pr, 6p..9p, 1s..5s, 5sr, 6s..9s, E S W N P F C, ?`.
 /// Unknown strings sort last (one past `?`).
 fn pai_rank(pai: &str) -> usize {
     const ORDER: [&str; 38] = [
-        "1m", "2m", "3m", "4m", "5mr", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5pr",
-        "5p", "6p", "7p", "8p", "9p", "1s", "2s", "3s", "4s", "5sr", "5s", "6s", "7s", "8s", "9s",
+        "1m", "2m", "3m", "4m", "5m", "5mr", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5p",
+        "5pr", "6p", "7p", "8p", "9p", "1s", "2s", "3s", "4s", "5s", "5sr", "6s", "7s", "8s", "9s",
         "E", "S", "W", "N", "P", "F", "C", "?",
     ];
     ORDER.iter().position(|t| *t == pai).unwrap_or(ORDER.len())
@@ -95,21 +95,25 @@ mod tests {
     }
 
     #[test]
-    fn red_five_sorts_before_normal_five() {
-        assert_eq!(compare_pai("5mr", "5m"), Ordering::Less);
-        assert_eq!(compare_pai("5pr", "5p"), Ordering::Less);
+    fn red_five_sorts_after_normal_five() {
+        assert_eq!(compare_pai("5mr", "5m"), Ordering::Greater);
+        assert_eq!(compare_pai("5pr", "5p"), Ordering::Greater);
+        assert_eq!(compare_pai("5sr", "5s"), Ordering::Greater);
     }
 
     #[test]
     fn full_sort_matches_canonical_order() {
-        let mut tiles: Vec<String> = vec!["C", "1m", "5m", "5mr", "9p", "E", "?", "3s"]
-            .into_iter()
-            .map(String::from)
-            .collect();
+        let mut tiles: Vec<String> = vec![
+            "C", "1m", "5m", "5mr", "9p", "5pr", "5p", "5sr", "5s", "E", "?", "3s",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
         tiles.sort_by(|a, b| compare_pai(a, b));
         assert_eq!(
             tiles,
-            ["1m", "5mr", "5m", "9p", "3s", "E", "C", "?"].map(String::from),
+            ["1m", "5m", "5mr", "5p", "5pr", "9p", "3s", "5s", "5sr", "E", "C", "?"]
+                .map(String::from),
         );
     }
 }

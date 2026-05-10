@@ -32,9 +32,7 @@ use crate::bot::runtime::PythonRuntime;
 use crate::bot::sync_guard::SyncGuard;
 use crate::event_bus::{BotResponseBus, BotStatusBus, NotifyBus};
 use crate::inspector::InspectorWriter;
-use crate::schema::{
-    BotReaction, BotStatus, InspectorEntry, LoadStage, MjaiEvent, Notification,
-};
+use crate::schema::{BotReaction, BotStatus, InspectorEntry, LoadStage, MjaiEvent, Notification};
 use anyhow::{bail, Context, Result};
 use chrono::Local;
 use std::collections::HashSet;
@@ -62,6 +60,9 @@ pub struct BotManager {
     runner: Option<Box<dyn BotRunner>>,
     /// Events seen since the last `react()` call.
     pending: Vec<MjaiEvent>,
+    /// Monotonic mjai event index for the current manager process. Stamped
+    /// onto bot responses so autoplay can reject late decisions.
+    event_seq: u64,
     /// Bot's seat in the current game; set on `start_game`.
     actor_id: Option<u8>,
     out_tx: BotResponseBus,
@@ -99,6 +100,7 @@ impl BotManager {
             active_name,
             runner: None,
             pending: Vec::new(),
+            event_seq: 0,
             actor_id: None,
             out_tx,
             status_tx,
@@ -149,6 +151,9 @@ impl BotManager {
 
     /// Drive one event through the manager. Public for unit tests.
     pub async fn handle(&mut self, event: MjaiEvent) -> Result<()> {
+        self.event_seq = self.event_seq.saturating_add(1);
+        let trigger_seq = self.event_seq;
+
         // Spawn the runner the moment we see the bot's seat in start_game.
         if let MjaiEvent::StartGame {
             id: Some(seat),
@@ -196,7 +201,7 @@ impl BotManager {
             .expect("runner is Some — checked above");
         let batch = std::mem::take(&mut self.pending);
         let started = Instant::now();
-        let resp = match runner.react(&batch).await {
+        let mut resp = match runner.react(&batch).await {
             Ok(r) => r,
             Err(e) => {
                 let err_str = format!("{e:#}");
@@ -209,6 +214,7 @@ impl BotManager {
                 return Err(e).context("bot react failed");
             }
         };
+        resp.trigger_seq = Some(trigger_seq);
         let reaction_ms = started.elapsed().as_millis() as u64;
         debug!(action = ?resp.action, meta = ?resp.meta, reaction_ms, "bot reacted");
         // Inspector record: pair the trigger event (the last item in the
@@ -447,6 +453,15 @@ impl BotManager {
             MjaiEvent::Chi { actor, .. }
             | MjaiEvent::Pon { actor, .. }
             | MjaiEvent::Daiminkan { actor, .. } => *actor == me,
+            // Path B riichi: autoplay injects `reach` with this flag so the
+            // bot emits the declaration `dahai` immediately. Bridge-emitted
+            // `reach` never sets it (otherwise we'd flush before the paired
+            // `dahai` arrives from the same WS frame).
+            MjaiEvent::Reach {
+                actor,
+                akagi_flush_bot: true,
+                ..
+            } if *actor == me => true,
             // Round / game boundaries: bot may want to flush state.
             MjaiEvent::ReachAccepted { .. }
             | MjaiEvent::Hora { .. }
@@ -454,7 +469,7 @@ impl BotManager {
             | MjaiEvent::EndKyoku
             | MjaiEvent::EndGame => true,
             // Everything else (start_game/start_kyoku, our own dahai,
-            // ankan/kakan, dora reveal, reach declaration) accumulates
+            // ankan/kakan, dora reveal, bridge-shaped reach) accumulates
             // without bothering the bot — its state catches up the next
             // time we flush.
             _ => false,
@@ -513,6 +528,7 @@ mod tests {
                 Ok(BotResponse {
                     action: MjaiEvent::None,
                     meta: None,
+                    trigger_seq: None,
                 })
             } else {
                 Ok(q.remove(0))
@@ -669,6 +685,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn akagi_prompt_reach_flushes_immediately() {
+        let replies = vec![BotResponse {
+            action: MjaiEvent::Dahai {
+                actor: 2,
+                pai: "5p".into(),
+                tsumogiri: false,
+            },
+            meta: None,
+            trigger_seq: None,
+        }];
+        let (mut mgr, calls, _, _, _) = manager_with_mock(replies);
+
+        mgr.handle(MjaiEvent::reach_prompt_riichi_dahai(2))
+            .await
+            .unwrap();
+
+        let calls = calls.lock().await;
+        assert_eq!(calls.len(), 1, "prompt reach must flush without waiting");
+        assert_eq!(calls[0].len(), 1);
+        assert!(matches!(
+            calls[0][0],
+            MjaiEvent::Reach {
+                actor: 2,
+                akagi_flush_bot: true,
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
     async fn own_pon_flushes_so_bot_picks_post_call_discard() {
         let (mut mgr, calls, _, _, _) = manager_with_mock(vec![]);
 
@@ -743,12 +789,15 @@ mod tests {
         let scripted = BotResponse {
             action: dahai(2),
             meta: None,
+            trigger_seq: None,
         };
         let (mut mgr, _, mut rx, _, _) = manager_with_mock(vec![scripted.clone()]);
         mgr.handle(dahai(0)).await.unwrap(); // others' dahai → flush
 
         let received = rx.try_recv().expect("bot response should be broadcast");
-        assert_eq!(received, scripted);
+        assert_eq!(received.action, scripted.action);
+        assert_eq!(received.meta, scripted.meta);
+        assert_eq!(received.trigger_seq, Some(1));
     }
 
     #[tokio::test]

@@ -12,9 +12,13 @@
 //! but possible if the user fiddled with `--user-data-dir` manually),
 //! the function returns an error and the supervisor surfaces it.
 
-use anyhow::{anyhow, Context, Result};
+#[cfg(unix)]
+use anyhow::Context;
+use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
-use tracing::{debug, info, warn};
+#[cfg(unix)]
+use tracing::debug;
+use tracing::{info, warn};
 
 /// Resolve the user-data-dir path for the controlled Chromium instance.
 /// `configured` empty → exe-adjacent `chrome-profile/` via

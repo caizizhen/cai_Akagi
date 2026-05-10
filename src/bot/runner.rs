@@ -4,6 +4,9 @@
 //! venv, talks JSONL over stdin/stdout, and pumps stderr into `tracing`
 //! with a `bot=<name>` field so logs are searchable. One long-lived child
 //! per game; `reset()` ends the current game and respawns for the next.
+//!
+//! Event batches are passed through [`crate::schema::MjaiEvent::to_bot_wire`]
+//! before JSON serialization so Akagi-internal keys never reach strict bot parsers.
 
 use crate::bot::runtime::PythonRuntime;
 use crate::bot::types::BotResponse;
@@ -144,7 +147,8 @@ impl SubprocessBot {
 #[async_trait]
 impl BotRunner for SubprocessBot {
     async fn react(&mut self, events: &[MjaiEvent]) -> Result<BotResponse> {
-        let line = serde_json::to_string(events)?;
+        let wire: Vec<MjaiEvent> = events.iter().map(MjaiEvent::to_bot_wire).collect();
+        let line = serde_json::to_string(&wire)?;
         self.stdin
             .write_all(line.as_bytes())
             .await

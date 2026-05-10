@@ -419,6 +419,8 @@ function AutoplayCard({
       hover_delay_ms: 150,
       click_hold_ms: 50,
       dealer_first_discard_extra_delay_ms: 2000,
+      dahai_confirm_samples: 5,
+      dahai_confirm_gap_ms: 120,
     },
   }
   const captureIsChromium = draft.capture?.mode === 'chromium'
@@ -528,6 +530,42 @@ function AutoplayCard({
             onChange={(e) =>
               setMajsoulField({
                 dealer_first_discard_extra_delay_ms: Number(e.target.value || 0),
+              })
+            }
+          />
+        </Field>
+        <Field
+          label={t('settings.autoplay.dahai_confirm_samples')}
+          hint={t('settings.autoplay.dahai_confirm_samples_hint')}
+        >
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={5}
+            max={20}
+            value={ap.majsoul.dahai_confirm_samples ?? 5}
+            onChange={(e) =>
+              setMajsoulField({
+                dahai_confirm_samples: Math.min(
+                  20,
+                  Math.max(5, Math.floor(Number(e.target.value || 5))),
+                ),
+              })
+            }
+          />
+        </Field>
+        <Field
+          label={t('settings.autoplay.dahai_confirm_gap')}
+          hint={t('settings.autoplay.dahai_confirm_gap_hint')}
+        >
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={ap.majsoul.dahai_confirm_gap_ms ?? 120}
+            onChange={(e) =>
+              setMajsoulField({
+                dahai_confirm_gap_ms: Number(e.target.value || 0),
               })
             }
           />

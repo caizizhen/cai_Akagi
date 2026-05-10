@@ -1,12 +1,103 @@
 manifest_version = 1
 
 [bot]
-name        = "example"
-display     = "Example (rule-based)"
-description = "Rule-based shanten optimizer. No knobs, ships in tree as a known-good reference."
-version     = "0.1.0"
+name             = "example"
+display          = "Example (rule-based)"
+description      = "Rule-based shanten optimizer with tunable defence / fold / riichi thresholds."
+version          = "0.2.0"
+supported_modes  = ["4p", "3p"]
 
-# No [settings.*] tables — this bot has nothing to configure. The frontend
-# still receives a manifest, so it can show metadata even when the
-# settings panel is empty.
-[settings]
+[settings.play_style]
+type    = "enum"
+label   = "Play style"
+default = "balanced"
+choices = ["aggressive", "balanced", "conservative", "tanyao_fast"]
+help    = "Aggressive: push value and big hands. Balanced: avoid riichi and weigh risk/reward. Conservative: prioritize defence. Tanyao fast: open simple tiles and race to the fastest tanyao win."
+
+[settings.early_left_tiles]
+type    = "int"
+label   = "Early wall (left tiles ≥)"
+default = 56
+min     = 40
+max     = 70
+help    = "While remaining wall tiles are above this, open calls (chi/pon/kan) use stricter rules unless mid-late."
+
+[settings.min_left_for_riichi]
+type    = "int"
+label   = "Min wall tiles to declare riichi"
+default = 10
+min     = 4
+max     = 30
+help    = "Do not riichi when fewer tiles remain than this (thin wall)."
+
+[settings.tight_first_place_margin]
+type    = "int"
+label   = "Score pressure margin (pt)"
+default = 7200
+min     = 0
+max     = 32000
+help    = "Treat tight 1st-place leads, or late-round deficits within this margin, as score pressure."
+
+[settings.fold_trigger_danger]
+type    = "int"
+label   = "Fold trigger (danger)"
+default = 35
+min     = 0
+max     = 80
+help    = "Under defence, if best same-shanten discard danger is at least this, allow +1 shanten (兜) when it drops danger enough."
+
+[settings.fold_min_danger_drop]
+type    = "int"
+label   = "Fold min danger drop"
+default = 10
+min     = 0
+max     = 40
+help    = "Minimum danger improvement required to accept +1 shanten when folding."
+
+[settings.riichi_max_left_2_wait_rivals]
+type    = "int"
+label   = "Riichi: max wall for 2-wait (rivals riichi)"
+default = 16
+min     = 0
+max     = 40
+help    = "When a rival is riichi, allow 2-wait riichi only if remaining wall tiles ≤ this."
+
+[settings.riichi_max_left_2_wait_pressure]
+type    = "int"
+label   = "Riichi: max wall for 2-wait (score pressure)"
+default = 18
+min     = 0
+max     = 40
+help    = "Under live score pressure, allow 2-wait riichi only if remaining wall tiles ≤ this."
+
+[settings.riichi_min_score]
+type    = "int"
+label   = "Riichi min value score"
+default = 34
+min     = 0
+max     = 100
+help    = "Minimum rough value score for riichi. Dora, red fives, dealer, wait count, and live waits raise this score."
+
+[settings.call_value_penalty_max]
+type    = "int"
+label   = "Call discard value cap"
+default = 24
+min     = 0
+max     = 80
+help    = "Caps the value-loss penalty when choosing the discard after chi/pon, preserving dora, red fives, yakuhai pairs, and good shapes."
+
+[settings.min_safe_tiles_to_fold]
+type    = "int"
+label   = "Min safe tiles before folding"
+default = 2
+min     = 0
+max     = 8
+help    = "When safe discard inventory is at or below this count, tenpai/near-tenpai hands push more often instead of breaking shape."
+
+[settings.damaten_value_score]
+type    = "int"
+label   = "Damaten value score"
+default = 50
+min     = 0
+max     = 120
+help    = "Closed tenpai at or above this rough value can stay damaten under placement pressure or dangerous riichi declaration."

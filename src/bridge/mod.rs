@@ -53,7 +53,10 @@ impl ParseResult {
         Self::default()
     }
     pub fn just_events(events: Vec<MjaiEvent>) -> Self {
-        Self { events, parsed: None }
+        Self {
+            events,
+            parsed: None,
+        }
     }
 }
 
@@ -65,6 +68,13 @@ pub trait Bridge: Send {
 
     /// Build a raw platform frame from an mjai command, if applicable.
     fn build(&mut self, command: &MjaiEvent) -> Option<Vec<u8>>;
+
+    /// Called when the proxied WebSocket flow closes. Bridges with an
+    /// open mjai stream can emit a terminal event so downstream click
+    /// loops drop stale in-game state immediately.
+    fn on_close(&mut self) -> Vec<MjaiEvent> {
+        Vec::new()
+    }
 }
 
 /// Construct a bridge for the given platform.

@@ -29,6 +29,10 @@ fn default_num_players() -> u8 {
     4
 }
 
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 /// One mjai event. Serialized as `{"type":"<snake_case>", ...}` with `type` first.
 ///
 /// Mirrors the 15 event types in `reference/reference_mjai.md` plus the
@@ -118,6 +122,14 @@ pub enum MjaiEvent {
         /// events leave it None.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pai: Option<Tile>,
+        /// Akagi-internal: when `true`, the bot manager flushes immediately
+        /// on this `reach` so a subprocess bot can emit the declaration
+        /// `dahai` after autoplay clicked 立直 (Path B). Game bridges never
+        /// set this — they emit `[reach, dahai]` as separate events and
+        /// must not force an early flush between them.
+        #[serde(default)]
+        #[serde(skip_serializing_if = "is_false")]
+        akagi_flush_bot: bool,
     },
     ReachAccepted {
         actor: Actor,
@@ -152,6 +164,41 @@ pub enum MjaiEvent {
     /// bot has no decision to make. Kept in this enum so bot replies
     /// round-trip through the same type as bridge events.
     None,
+}
+
+impl MjaiEvent {
+    /// `reach` as emitted by platform bridges (`akagi_flush_bot = false`).
+    #[must_use]
+    pub fn reach_from_bridge(actor: Actor, pai: Option<Tile>) -> Self {
+        Self::Reach {
+            actor,
+            pai,
+            akagi_flush_bot: false,
+        }
+    }
+
+    /// Path B riichi: autoplay already clicked 立直; prompt the bot for the
+    /// declaration `dahai` with an immediate `react()` flush.
+    #[must_use]
+    pub fn reach_prompt_riichi_dahai(actor: Actor) -> Self {
+        Self::Reach {
+            actor,
+            pai: None,
+            akagi_flush_bot: true,
+        }
+    }
+
+    /// Shape sent to external mjai bots on subprocess stdin. Strips
+    /// Akagi-only fields so strict JSON parsers (e.g. Pydantic `extra=forbid`)
+    /// do not reject batches — a rejection tears down the runner and stops
+    /// all bot output until the next table.
+    #[must_use]
+    pub fn to_bot_wire(&self) -> Self {
+        match self {
+            Self::Reach { actor, pai, .. } => Self::reach_from_bridge(*actor, pai.clone()),
+            other => other.clone(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -233,9 +280,14 @@ mod tests {
         let plain = r#"{"type":"reach","actor":0}"#;
         let ev: MjaiEvent = serde_json::from_str(plain).unwrap();
         match &ev {
-            MjaiEvent::Reach { actor, pai } => {
+            MjaiEvent::Reach {
+                actor,
+                pai,
+                akagi_flush_bot,
+            } => {
                 assert_eq!(*actor, 0);
                 assert!(pai.is_none(), "bridge reach must have pai=None");
+                assert!(!akagi_flush_bot);
             }
             other => panic!("expected Reach, got {other:?}"),
         }
@@ -246,9 +298,14 @@ mod tests {
         let with_pai = r#"{"type":"reach","actor":1,"pai":"5p"}"#;
         let ev: MjaiEvent = serde_json::from_str(with_pai).unwrap();
         match &ev {
-            MjaiEvent::Reach { actor, pai } => {
+            MjaiEvent::Reach {
+                actor,
+                pai,
+                akagi_flush_bot,
+            } => {
                 assert_eq!(*actor, 1);
                 assert_eq!(pai.as_deref(), Some("5p"));
+                assert!(!akagi_flush_bot);
             }
             other => panic!("expected Reach, got {other:?}"),
         }
@@ -261,9 +318,14 @@ mod tests {
         let null_pai = r#"{"type":"reach","actor":2,"pai":null}"#;
         let ev: MjaiEvent = serde_json::from_str(null_pai).unwrap();
         match &ev {
-            MjaiEvent::Reach { actor, pai } => {
+            MjaiEvent::Reach {
+                actor,
+                pai,
+                akagi_flush_bot,
+            } => {
                 assert_eq!(*actor, 2);
                 assert!(pai.is_none(), "explicit null must deserialize to None");
+                assert!(!akagi_flush_bot);
             }
             other => panic!("expected Reach, got {other:?}"),
         }
@@ -280,13 +342,47 @@ mod tests {
         let empty_pai = r#"{"type":"reach","actor":3,"pai":""}"#;
         let ev: MjaiEvent = serde_json::from_str(empty_pai).unwrap();
         match &ev {
-            MjaiEvent::Reach { actor, pai } => {
+            MjaiEvent::Reach {
+                actor,
+                pai,
+                akagi_flush_bot,
+            } => {
                 assert_eq!(*actor, 3);
                 assert_eq!(pai.as_deref(), Some(""));
+                assert!(!akagi_flush_bot);
             }
             other => panic!("expected Reach, got {other:?}"),
         }
         assert_eq!(serde_json::to_string(&ev).unwrap(), empty_pai);
+
+        // Autoplay Path B: forces immediate bot flush (round-trips).
+        let flush_line = r#"{"type":"reach","actor":0,"akagi_flush_bot":true}"#;
+        let ev: MjaiEvent = serde_json::from_str(flush_line).unwrap();
+        match &ev {
+            MjaiEvent::Reach {
+                actor,
+                pai,
+                akagi_flush_bot,
+            } => {
+                assert_eq!(*actor, 0);
+                assert!(pai.is_none());
+                assert!(*akagi_flush_bot);
+            }
+            other => panic!("expected Reach, got {other:?}"),
+        }
+        assert_eq!(serde_json::to_string(&ev).unwrap(), flush_line);
+    }
+
+    #[test]
+    fn to_bot_wire_strips_akagi_flush_bot_from_reach() {
+        let ev = MjaiEvent::reach_prompt_riichi_dahai(2);
+        let wire = ev.to_bot_wire();
+        let json = serde_json::to_string(&wire).unwrap();
+        assert!(
+            !json.contains("akagi_flush_bot"),
+            "subprocess bots must not see internal keys: {json}"
+        );
+        assert_eq!(wire, MjaiEvent::reach_from_bridge(2, None));
     }
 
     /// Backward compat: 4p log lines from before `num_players` was added must

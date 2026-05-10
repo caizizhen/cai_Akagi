@@ -23,7 +23,7 @@ use crate::schema::{
     InspectorEntry, LogEntry, LogSessionInfo, Notification, ReadInspectorRequest,
     ReadInspectorResponse, ReadLogRequest, ReadLogResponse, Snapshot,
 };
-use crate::util::resolve_dir;
+use crate::util::resolve_mjai_bot_dir;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tauri::State;
@@ -107,8 +107,7 @@ pub async fn update_config(new_config: AppConfig, state: State<'_, AppState>) ->
         *state
             .history_platform
             .write()
-            .expect("history platform lock poisoned") =
-            crate::schema::Platform::from(new_platform);
+            .expect("history platform lock poisoned") = crate::schema::Platform::from(new_platform);
     }
 
     if capture_changed || proxy_changed || platform_changed {
@@ -190,7 +189,7 @@ pub async fn update_config(new_config: AppConfig, state: State<'_, AppState>) ->
 #[tauri::command]
 pub async fn list_bots(state: State<'_, AppState>) -> CmdResult<Vec<BotInfo>> {
     let dir = state.config.read().await.bot.dir.clone();
-    let resolved = resolve_dir(Path::new(&dir));
+    let resolved = resolve_mjai_bot_dir(Path::new(&dir));
     let registry = BotRegistry::scan(&resolved).map_err(|e| format!("scan bots: {e:#}"))?;
     Ok(registry.entries().iter().map(entry_to_info).collect())
 }
@@ -202,7 +201,7 @@ pub async fn list_bots(state: State<'_, AppState>) -> CmdResult<Vec<BotInfo>> {
 #[tauri::command]
 pub async fn get_bot_settings(name: String, state: State<'_, AppState>) -> CmdResult<BotSettings> {
     let dir = state.config.read().await.bot.dir.clone();
-    let resolved = resolve_dir(Path::new(&dir));
+    let resolved = resolve_mjai_bot_dir(Path::new(&dir));
     let registry = BotRegistry::scan(&resolved).map_err(|e| format!("scan bots: {e:#}"))?;
     let entry = registry
         .find(&name)
@@ -230,7 +229,7 @@ pub async fn update_bot_settings(
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
     let dir = state.config.read().await.bot.dir.clone();
-    let resolved = resolve_dir(Path::new(&dir));
+    let resolved = resolve_mjai_bot_dir(Path::new(&dir));
     let registry = BotRegistry::scan(&resolved).map_err(|e| format!("scan bots: {e:#}"))?;
     let entry = registry
         .find(&name)
@@ -289,7 +288,7 @@ pub async fn install_bot_from_github(
     state: State<'_, AppState>,
 ) -> CmdResult<BotInfo> {
     let dir = state.config.read().await.bot.dir.clone();
-    let resolved = resolve_dir(Path::new(&dir));
+    let resolved = resolve_mjai_bot_dir(Path::new(&dir));
     std::fs::create_dir_all(&resolved)
         .map_err(|e| format!("create bot dir {}: {e}", resolved.display()))?;
 
@@ -317,7 +316,7 @@ pub async fn update_bot_from_manifest(
     state: State<'_, AppState>,
 ) -> CmdResult<BotInfo> {
     let dir = state.config.read().await.bot.dir.clone();
-    let resolved = resolve_dir(Path::new(&dir));
+    let resolved = resolve_mjai_bot_dir(Path::new(&dir));
     let registry = BotRegistry::scan(&resolved).map_err(|e| format!("scan bots: {e:#}"))?;
     let entry = registry
         .find(&name)
@@ -364,7 +363,7 @@ pub async fn update_bot_from_manifest(
 #[tauri::command]
 pub async fn sync_bot_deps(name: String, force: bool, state: State<'_, AppState>) -> CmdResult<()> {
     let dir = state.config.read().await.bot.dir.clone();
-    let resolved = resolve_dir(Path::new(&dir));
+    let resolved = resolve_mjai_bot_dir(Path::new(&dir));
     let registry = BotRegistry::scan(&resolved).map_err(|e| format!("scan bots: {e:#}"))?;
     let entry = registry
         .find(&name)
@@ -555,10 +554,7 @@ pub async fn get_log_dir(state: State<'_, AppState>) -> CmdResult<PathBuf> {
 /// child, so a missing tool surfaces only if `spawn` itself fails. The
 /// frontend already wraps this in try/catch.
 #[tauri::command]
-pub async fn open_log_folder(
-    session: Option<String>,
-    state: State<'_, AppState>,
-) -> CmdResult<()> {
+pub async fn open_log_folder(session: Option<String>, state: State<'_, AppState>) -> CmdResult<()> {
     let target = match session {
         Some(name) if !name.is_empty() => {
             // Defense-in-depth: only allow the canonical session name
@@ -622,10 +618,13 @@ fn is_session_name(name: &str) -> bool {
         return false;
     }
     let bytes = name.as_bytes();
-    bytes
-        .iter()
-        .enumerate()
-        .all(|(i, &b)| if i == 8 { b == b'-' } else { b.is_ascii_digit() })
+    bytes.iter().enumerate().all(|(i, &b)| {
+        if i == 8 {
+            b == b'-'
+        } else {
+            b.is_ascii_digit()
+        }
+    })
 }
 
 /// List every session directory under the active log root. Newest first.
@@ -736,7 +735,11 @@ pub async fn read_log_session(
         let target_filters: Vec<String> = req.targets.unwrap_or_default();
         let search_lc = req.search.as_deref().map(|s| s.to_lowercase());
         // 0 → use a sane default (1000); otherwise hard-cap at 2000.
-        let limit = if req.limit == 0 { 1000 } else { req.limit.min(2000) };
+        let limit = if req.limit == 0 {
+            1000
+        } else {
+            req.limit.min(2000)
+        };
 
         let mut skipped_malformed: u32 = 0;
         let mut total_match: usize = 0;
@@ -825,7 +828,11 @@ pub async fn read_inspector(
             req.kinds.as_ref().map(|v| v.iter().cloned().collect());
         let actor = req.actor;
         let search_lc = req.search.as_deref().map(|s| s.to_lowercase());
-        let limit = if req.limit == 0 { 1000 } else { req.limit.min(2000) };
+        let limit = if req.limit == 0 {
+            1000
+        } else {
+            req.limit.min(2000)
+        };
 
         let mut skipped_malformed: u32 = 0;
         let mut total_match: usize = 0;
@@ -1099,7 +1106,7 @@ pub async fn delete_bot(name: String, state: State<'_, AppState>) -> CmdResult<(
     if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
         return Err(format!("invalid bot name {name:?}"));
     }
-    let resolved_root = resolve_dir(Path::new(&dir));
+    let resolved_root = resolve_mjai_bot_dir(Path::new(&dir));
     let target = resolved_root.join(&name);
     if !target.is_dir() {
         return Err(format!("bot {name:?} not found at {}", target.display()));
@@ -1175,10 +1182,7 @@ pub async fn get_game_history_events(
 /// `HistoryEvent::Deleted` on the history bus so the frontend can drop
 /// the row from its cache without a refetch.
 #[tauri::command]
-pub async fn delete_game_history_entry(
-    id: String,
-    state: State<'_, AppState>,
-) -> CmdResult<bool> {
+pub async fn delete_game_history_entry(id: String, state: State<'_, AppState>) -> CmdResult<bool> {
     let store = state.history_store.clone();
     let id_for_blocking = id.clone();
     let removed = tokio::task::spawn_blocking(move || store.delete(&id_for_blocking))
