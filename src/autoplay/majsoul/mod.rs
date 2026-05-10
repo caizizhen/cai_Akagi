@@ -1,4 +1,4 @@
-﻿//! Majsoul implementation of [`PlatformAutoplay`].
+//! Majsoul implementation of [`PlatformAutoplay`].
 //!
 //! Coordinate tables in `coords.rs` are the only Majsoul-specific data;
 //! the dispatch logic here translates a bot decision into a [`Step`]
@@ -24,6 +24,7 @@ use coords::{
 use rand::Rng;
 use riichienv_core::action::{Action, ActionType};
 use riichienv_core::parser::tid_to_mjai;
+use std::cmp::Ordering;
 
 #[derive(Default)]
 pub struct MajsoulAutoplay;
@@ -252,6 +253,22 @@ fn sorted_hand_index_for_discard(pai: &str, sorted: &[String]) -> Option<usize> 
     sorted.iter().position(|x| x == pai)
 }
 
+/// Majsoul's local rack displays red fives before the normal five of the same
+/// suit. Keep this separate from mjai canonical ordering so hand clicks match
+/// the screen while logs and bridge state keep their canonical order.
+fn compare_pai_for_hand_click(a: &str, b: &str) -> Ordering {
+    fn rank(pai: &str) -> usize {
+        const ORDER: [&str; 38] = [
+            "1m", "2m", "3m", "4m", "5mr", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p",
+            "5pr", "5p", "6p", "7p", "8p", "9p", "1s", "2s", "3s", "4s", "5sr", "5s", "6s", "7s",
+            "8s", "9s", "E", "S", "W", "N", "P", "F", "C", "?",
+        ];
+        ORDER.iter().position(|t| *t == pai).unwrap_or(ORDER.len())
+    }
+
+    rank(a).cmp(&rank(b))
+}
+
 /// Remove the drawn tile from the raw hand vec before sorting. Hand/rack
 /// disambiguation is exact for red fives: a normal five must not remove/click
 /// the red five slot.
@@ -272,7 +289,7 @@ fn plan_dahai_click(pai: &str, tsumogiri: bool, ctx: &ActionContext) -> Option<S
     // directly (not get_pai_coord, which would add TSUMO_SPACE for i=13).
     if is_dealer_first_discard(ctx) {
         let mut sorted = ctx.snapshot.players[our_seat].tehai.clone();
-        sorted.sort_by(|a, b| compare_pai(a, b));
+        sorted.sort_by(|a, b| compare_pai_for_hand_click(a, b));
         let idx = sorted_hand_index_for_discard(pai, &sorted)?;
         let (x, y) = TILES.get(idx).copied()?;
         return Some(Step::Click {
@@ -295,7 +312,7 @@ fn plan_dahai_click(pai: &str, tsumogiri: bool, ctx: &ActionContext) -> Option<S
             }
         }
     }
-    tehai.sort_by(|a, b| compare_pai(a, b));
+    tehai.sort_by(|a, b| compare_pai_for_hand_click(a, b));
 
     if let Some(t) = tsumohai {
         // If the snapshot already includes the drawn tile, `is_tsumohai`
@@ -861,9 +878,9 @@ mod tests {
         match &result.steps[1] {
             Step::Click { x_norm, .. } => {
                 assert!(
-                    (*x_norm - TILES[4].0).abs() < 1e-9,
+                    (*x_norm - TILES[5].0).abs() < 1e-9,
                     "expected normal 5m slot at {}, got {x_norm}",
-                    TILES[4].0
+                    TILES[5].0
                 );
             }
             _ => panic!("second step should be a click"),
@@ -879,17 +896,95 @@ mod tests {
                 red.to_string(),
                 "9s".to_string(),
             ];
-            sorted.sort_by(|a, b| compare_pai(a, b));
+            sorted.sort_by(|a, b| compare_pai_for_hand_click(a, b));
             assert_eq!(
                 sorted_hand_index_for_discard(normal, &sorted),
-                Some(1),
-                "{normal} should be before {red} in the click order"
+                Some(2),
+                "{normal} should be after {red} in the Majsoul rack click order"
             );
             assert_eq!(
                 sorted_hand_index_for_discard(red, &sorted),
-                Some(2),
+                Some(1),
                 "{red} should remain independently selectable"
             );
+        }
+    }
+
+    #[test]
+    fn dahai_normal_5p_clicks_visual_slot_after_red_5p() {
+        let snap = snapshot_with_oya(
+            0,
+            1,
+            vec![
+                "2m", "4m", "6m", "7m", "7m", "3p", "4p", "5p", "5pr", "8p", "9p", "6s", "6s", "E",
+            ],
+        );
+        let act = MjaiEvent::Dahai {
+            actor: 0,
+            pai: "5p".into(),
+            tsumogiri: false,
+        };
+        let cfg_ref = cfg();
+        let ctx = ctx_for(
+            &act,
+            &snap,
+            &[],
+            Some("1m"),
+            Some("E"),
+            false,
+            ReachState::Idle,
+            &cfg_ref,
+        );
+        let result = MajsoulAutoplay::new().plan(&ctx);
+        assert_eq!(result.steps.len(), 2);
+        match &result.steps[1] {
+            Step::Click { x_norm, .. } => {
+                assert!(
+                    (*x_norm - TILES[8].0).abs() < 1e-9,
+                    "expected normal 5p after red 5p at {}, got {x_norm}",
+                    TILES[8].0
+                );
+            }
+            _ => panic!("second step should be a click"),
+        }
+    }
+
+    #[test]
+    fn dahai_red_5p_clicks_visual_slot_before_normal_5p() {
+        let snap = snapshot_with_oya(
+            0,
+            1,
+            vec![
+                "2m", "4m", "6m", "7m", "7m", "3p", "4p", "5p", "5pr", "8p", "9p", "6s", "6s", "E",
+            ],
+        );
+        let act = MjaiEvent::Dahai {
+            actor: 0,
+            pai: "5pr".into(),
+            tsumogiri: false,
+        };
+        let cfg_ref = cfg();
+        let ctx = ctx_for(
+            &act,
+            &snap,
+            &[],
+            Some("1m"),
+            Some("E"),
+            false,
+            ReachState::Idle,
+            &cfg_ref,
+        );
+        let result = MajsoulAutoplay::new().plan(&ctx);
+        assert_eq!(result.steps.len(), 2);
+        match &result.steps[1] {
+            Step::Click { x_norm, .. } => {
+                assert!(
+                    (*x_norm - TILES[7].0).abs() < 1e-9,
+                    "expected red 5p before normal 5p at {}, got {x_norm}",
+                    TILES[7].0
+                );
+            }
+            _ => panic!("second step should be a click"),
         }
     }
 
