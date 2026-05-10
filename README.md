@@ -71,6 +71,24 @@ built-in browser, mirrors the game state, and shows **shanten**, **waits**,
 **recommended discard** in a draggable HUD. Drop in an mjai-protocol bot
 like Mortal and the HUD also shows the bot's recommendation each turn.
 
+### cai_Akagi fork
+
+This repository packages a ready-to-run Akagi build with local Mortal
+bots under `mjai_bot/`:
+
+- **4-player Mortal (`mortal`)**: positioned as a Mahjong Soul **雀圣**
+  level bot. The model was trained from roughly **20 years of match
+  data** and about **1,000,000 self-play / training games**, then wrapped
+  for Akagi's mjai subprocess interface.
+- **3-player Mortal (`mortal3p`)**: bundled as the sanma bot slot.
+- The large model files are stored with **Git LFS**. After cloning, run
+  `git lfs pull` before starting Akagi.
+
+中文说明：本仓库已经内置正式 4 麻机器人。4 麻 Mortal 定位为雀圣能力，
+读取约 20 年比赛数据并训练约 100 万盘，是比普通占位模型更强的本地机器人。
+训练语料、训练 checkpoint、venv、runtime 缓存不会进入仓库；clone 后通过
+Git LFS 拉取模型即可运行。
+
 ## Screenshots
 
 <img width="2559" height="1439" alt="image" src="https://github.com/user-attachments/assets/da9e7cce-d8ef-4e6e-807b-f6f54013cf22" />
@@ -151,7 +169,41 @@ https://github.com/user-attachments/assets/2ce7cb71-8b25-4895-a12b-0a638665dcab
 
 ## Quick Start
 
-### A. Install a release
+### A. Clone this repository and run locally
+
+Use this path when you want the source tree in this repository, including
+the bundled Mortal bots:
+
+```powershell
+git clone https://github.com/caizizhen/cai_Akagi.git
+cd cai_Akagi
+git lfs install
+git lfs pull
+
+# Windows PowerShell: installs frontend deps if needed, starts Vite,
+# then runs the Rust/Tauri backend.
+.\start-akagi-dev.ps1
+```
+
+Useful startup options:
+
+```powershell
+.\start-akagi-dev.ps1 -Release
+.\start-akagi-dev.ps1 -SkipNpmInstall
+.\start-akagi-dev.ps1 -Config .\config.toml
+```
+
+Prerequisites for source startup:
+
+- Git + Git LFS
+- Rust stable toolchain
+- Node.js 20+ with npm
+- Windows WebView2 runtime
+
+The script checks whether the Mortal model files are still Git LFS
+pointers and runs `git lfs pull` automatically when needed.
+
+### B. Install a release
 
 Akagi ships as a portable zip — one self-contained folder per platform.
 Download the file for your OS from
@@ -174,7 +226,7 @@ On first launch the **Setup wizard** walks you through language,
 platform, capture mode, optional bot install (Mortal), and CA trust
 (only if you choose MITM mode).
 
-### B. Chromium mode (no CA trust needed)
+### C. Chromium mode (no CA trust needed)
 
 The simplest path. After Setup:
 
@@ -187,7 +239,7 @@ The simplest path. After Setup:
 Frames are intercepted via the Chrome DevTools Protocol — no system
 proxy, no certificate.
 
-### C. MITM mode
+### D. MITM mode
 
 System-wide proxy with a self-signed root CA at `./ca/`:
 
@@ -262,8 +314,23 @@ auto-migrated into `active_4p` on load.
 
 ### Install a bot
 
-The Setup wizard or the **Bots** tab can install bots straight from a
-GitHub release:
+This fork already includes local Mortal bot directories:
+
+- `mjai_bot/mortal` — 4-player Mahjong Soul bot. This is the strong
+  local model described above: roughly 20 years of match data plus about
+  1,000,000 training/self-play games, positioned around 雀圣 strength.
+- `mjai_bot/mortal3p` — 3-player sanma bot.
+
+The model weights are tracked by Git LFS. If a cloned checkout shows
+tiny text files at `mjai_bot/mortal/mortal.pth` or
+`mjai_bot/mortal3p/mortal.pth`, run:
+
+```bash
+git lfs pull
+```
+
+The upstream Setup wizard or the **Bots** tab can also install bots
+straight from a GitHub release:
 
 - Repo: `shinkuan/Akagi-MjaiBot-Mortal`
 - Asset (4P): `release4p.zip`
@@ -275,15 +342,11 @@ validates `bot.py`, and runs `uv sync` once. Subsequent launches are
 fast — the sync is gated by a stamp at
 `mjai_bot/<name>/.akagi/synced.stamp`.
 
-> [!IMPORTANT]
-> Because of GitHub's file-size limit, the Mortal weights bundled in
-> the release zip are a small, weak **placeholder model** — useful to
-> verify the install works, **not recommended for real play**.
-> **Stronger Mortal model weights** and an **online API-server model**
-> (a hosted, even stronger model — point your bot at the server and
-> an API key; no local NN needed) are both distributed through the
-> [Discord server](https://discord.gg/Z2wjXUK8bN). Ask there for
-> access; both 4P and 3P versions are available.
+> [!NOTE]
+> The note about placeholder Mortal release weights applies to the
+> upstream release zip flow. This `cai_Akagi` source repository tracks
+> its local `mortal.pth` files through Git LFS, so a normal clone plus
+> `git lfs pull` retrieves the bundled models.
 
 ### Per-mode bots
 
