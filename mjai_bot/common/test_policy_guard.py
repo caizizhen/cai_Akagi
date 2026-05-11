@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from policy_guard import ConservativePolicyGuard
+from policy_guard import ConservativePolicyGuard, _to34
 
 
 class FakePlayerState:
@@ -117,6 +117,7 @@ class PolicyGuardTest(unittest.TestCase):
     def test_conservative_late_game_prefers_genbutsu(self) -> None:
         guard = make_guard(["1m", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5p"])
         guard.consume({"type": "dahai", "actor": 1, "pai": "9m"})
+        guard.consume({"type": "dahai", "actor": 2, "pai": "9m"})
         guard.left_tiles = 20
 
         action = guard.guard_action(
@@ -133,6 +134,29 @@ class PolicyGuardTest(unittest.TestCase):
         self.assertEqual(action["type"], "dahai")
         self.assertEqual(action["pai"], "9m")
         self.assertEqual(action["meta"]["policy_guard"]["reason"], "late_game_conservative")
+
+    def test_late_game_without_riichi_keeps_model_honor_discard(self) -> None:
+        guard = make_guard(["1m", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5p"])
+        guard.consume({"type": "dahai", "actor": 1, "pai": "3m"})
+        guard.consume({"type": "dahai", "actor": 2, "pai": "3m"})
+        guard.left_tiles = 9
+
+        action = guard.guard_action(
+            {
+                "type": "dahai",
+                "actor": 0,
+                "pai": "N",
+                "meta": meta_for_allowed((2, 0.1), (30, 0.9)),
+            },
+            [],
+            "conservative",
+        )
+
+        self.assertEqual(action["pai"], "N")
+        self.assertNotIn("policy_guard", action.get("meta", {}))
+
+    def test_north_maps_to_honor_index(self) -> None:
+        self.assertEqual(_to34("N"), 30)
 
     def test_conservative_before_twenty_tiles_keeps_model_discard(self) -> None:
         guard = make_guard(["1m", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5p"])

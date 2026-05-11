@@ -32,8 +32,8 @@ def _to34(tile: str) -> int:
     tile = _normalize(tile)
     if tile == "?":
         return -1
-    if tile in "ESWPFCDN":
-        return 27 + "ESWPFCDN".index(tile)
+    if tile in "ESWNPFC":
+        return 27 + "ESWNPFC".index(tile)
     n = int(tile[0])
     suit = tile[1]
     return {"m": 0, "p": 9, "s": 18}[suit] + n - 1
@@ -356,11 +356,18 @@ class ConservativePolicyGuard:
         if not candidates:
             return action
 
-        best_pai, _ = max(
+        best_pai, best_model_score = max(
             candidates,
             key=lambda item: self._defensive_discard_score(item[0], item[1], danger_seats),
         )
         if not isinstance(current_pai, str) or best_pai == current_pai:
+            return action
+        if not active_riichi and not self._late_defence_override_allowed(
+            current_pai,
+            best_pai,
+            best_model_score,
+            danger_seats,
+        ):
             return action
 
         reason = "riichi_defense" if active_riichi else "late_game_conservative"
@@ -414,6 +421,25 @@ class ConservativePolicyGuard:
             non_red,
             model_score,
         )
+
+    def _late_defence_override_allowed(
+        self,
+        current_pai: str,
+        best_pai: str,
+        best_model_score: float,
+        danger_seats: set[int],
+    ) -> bool:
+        current = self._defensive_discard_score(current_pai, float("-inf"), danger_seats)
+        best = self._defensive_discard_score(best_pai, best_model_score, danger_seats)
+        current_genbutsu = current[0]
+        best_genbutsu = best[0]
+        best_exhausted = best[1] == 1
+        current_is_honor_or_terminal = current[3] == 1 or current[4] == 1
+        if current_is_honor_or_terminal and not best_exhausted:
+            return False
+        if best_exhausted:
+            return True
+        return best_genbutsu >= 2 and best_genbutsu > current_genbutsu
 
     def _live_waits_after_dahai(
         self,
