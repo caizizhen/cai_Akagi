@@ -252,6 +252,24 @@ fn sorted_hand_index_for_discard(pai: &str, sorted: &[String]) -> Option<usize> 
     sorted.iter().position(|x| x == pai)
 }
 
+fn red_counterpart(pai: &str) -> Option<&'static str> {
+    match pai {
+        "5m" => Some("5mr"),
+        "5p" => Some("5pr"),
+        "5s" => Some("5sr"),
+        _ => None,
+    }
+}
+
+/// Hard safety guard: if the bot asks for a normal five while the matching red
+/// five is also in the same visible closed rack, a fixed coordinate click can
+/// burn aka when the client ordering/animation differs. Skip the click instead.
+fn normal_five_has_red_twin(pai: &str, hand: &[String]) -> bool {
+    red_counterpart(pai)
+        .map(|red| hand.iter().any(|t| t == red))
+        .unwrap_or(false)
+}
+
 /// Remove the drawn tile from the raw hand vec before sorting. Hand/rack
 /// disambiguation is exact for red fives: a normal five must not remove/click
 /// the red five slot.
@@ -273,6 +291,9 @@ fn plan_dahai_click(pai: &str, tsumogiri: bool, ctx: &ActionContext) -> Option<S
     if is_dealer_first_discard(ctx) {
         let mut sorted = ctx.snapshot.players[our_seat].tehai.clone();
         sorted.sort_by(|a, b| compare_pai(a, b));
+        if normal_five_has_red_twin(pai, &sorted) {
+            return None;
+        }
         let idx = sorted_hand_index_for_discard(pai, &sorted)?;
         let (x, y) = TILES.get(idx).copied()?;
         return Some(Step::Click {
@@ -314,6 +335,9 @@ fn plan_dahai_click(pai: &str, tsumogiri: bool, ctx: &ActionContext) -> Option<S
     }
 
     let idx = sorted_hand_index_for_discard(pai, &tehai)?;
+    if normal_five_has_red_twin(pai, &tehai) {
+        return None;
+    }
     if idx >= TILES.len() - 1 {
         // No closed-hand slot 13 (only the tsumohai uses that path).
         return None;
@@ -832,7 +856,7 @@ mod tests {
     }
 
     #[test]
-    fn dahai_clicks_normal_five_not_red_five_when_bot_requests_normal() {
+    fn dahai_normal_five_with_closed_red_twin_is_not_auto_clicked() {
         let snap = snapshot_with_oya(
             0,
             1,
@@ -857,13 +881,48 @@ mod tests {
             &cfg_ref,
         );
         let result = MajsoulAutoplay::new().plan(&ctx);
+        assert!(
+            result
+                .steps
+                .iter()
+                .all(|s| !matches!(s, Step::Click { .. })),
+            "normal 5m must not be auto-clicked while closed red 5m is also visible"
+        );
+    }
+
+    #[test]
+    fn dahai_red_five_still_clicks_when_normal_five_also_exists() {
+        let snap = snapshot_with_oya(
+            0,
+            1,
+            vec![
+                "1m", "2m", "3m", "4m", "5m", "5mr", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "9p",
+            ],
+        );
+        let act = MjaiEvent::Dahai {
+            actor: 0,
+            pai: "5mr".into(),
+            tsumogiri: false,
+        };
+        let cfg_ref = cfg();
+        let ctx = ctx_for(
+            &act,
+            &snap,
+            &[],
+            Some("1m"),
+            Some("9p"),
+            false,
+            ReachState::Idle,
+            &cfg_ref,
+        );
+        let result = MajsoulAutoplay::new().plan(&ctx);
         assert_eq!(result.steps.len(), 2);
         match &result.steps[1] {
             Step::Click { x_norm, .. } => {
                 assert!(
-                    (*x_norm - TILES[4].0).abs() < 1e-9,
-                    "expected normal 5m slot at {}, got {x_norm}",
-                    TILES[4].0
+                    (*x_norm - TILES[5].0).abs() < 1e-9,
+                    "expected red 5m slot at {}, got {x_norm}",
+                    TILES[5].0
                 );
             }
             _ => panic!("second step should be a click"),
@@ -871,7 +930,7 @@ mod tests {
     }
 
     #[test]
-    fn dahai_clicks_normal_five_for_all_suits_when_red_also_exists() {
+    fn normal_five_red_twin_guard_covers_all_suits() {
         for (normal, red) in [("5m", "5mr"), ("5p", "5pr"), ("5s", "5sr")] {
             let mut sorted = vec![
                 "1m".to_string(),
@@ -889,6 +948,14 @@ mod tests {
                 sorted_hand_index_for_discard(red, &sorted),
                 Some(2),
                 "{red} should remain independently selectable"
+            );
+            assert!(
+                normal_five_has_red_twin(normal, &sorted),
+                "{normal} should be guarded when {red} is also visible"
+            );
+            assert!(
+                !normal_five_has_red_twin(red, &sorted),
+                "{red} should not be blocked by the normal-five guard"
             );
         }
     }
