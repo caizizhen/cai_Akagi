@@ -329,12 +329,15 @@ class ConservativePolicyGuard:
             seat for seat in self.riichi_seats if seat != self.player_id and seat < self.num_players
         )
         late_defence = self._late_defence_active(play_style)
-        hot_defence = self.hot_opponent_active()
-        if not active_riichi and not late_defence and not hot_defence:
+        if not active_riichi and not late_defence:
             return action
 
         danger_seats = set(active_riichi)
-        if self.hot_opponent_seat is not None and self.hot_opponent_seat != self.player_id:
+        if (
+            late_defence
+            and self.hot_opponent_seat is not None
+            and self.hot_opponent_seat != self.player_id
+        ):
             danger_seats.add(self.hot_opponent_seat)
         if late_defence:
             danger_seats.update(
@@ -361,7 +364,7 @@ class ConservativePolicyGuard:
             return action
 
         reason = "riichi_defense" if active_riichi else "late_game_conservative"
-        if hot_defence:
+        if late_defence and self.hot_opponent_active():
             reason = HOT_PLAYER_DANGER_NOTE
 
         meta.pop("q_values", None)

@@ -169,7 +169,27 @@ class PolicyGuardTest(unittest.TestCase):
         )
 
         self.assertEqual(action["pai"], "9m")
-        self.assertEqual(action["meta"]["policy_guard"]["reason"], "hot_opponent_conservative")
+        self.assertEqual(action["meta"]["policy_guard"]["reason"], "riichi_defense")
+
+    def test_hot_opponent_does_not_force_opening_betaori(self) -> None:
+        guard = make_guard(["1m", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5p"])
+        guard.consume({"type": "dahai", "actor": 1, "pai": "9m"})
+        guard.hot_opponent_seat = 1
+        guard.left_tiles = 62
+
+        action = guard.guard_action(
+            {
+                "type": "dahai",
+                "actor": 0,
+                "pai": "5p",
+                "meta": meta_for_allowed((8, 0.1), (13, 0.9)),
+            },
+            [],
+            "conservative",
+        )
+
+        self.assertEqual(action["pai"], "5p")
+        self.assertNotIn("policy_guard", action.get("meta", {}))
 
     def test_defensive_tie_prefers_normal_five_over_red_five(self) -> None:
         guard = make_guard(["1m", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5p"])
