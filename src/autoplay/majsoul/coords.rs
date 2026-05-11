@@ -34,6 +34,13 @@ pub const TILES: [(f64, f64); 14] = [
 /// just-drawn tsumohai.
 pub const TSUMO_SPACE: f64 = 0.246_875;
 
+/// Small rightward bias for local-hand tile clicks.
+///
+/// Field reports showed center-table coordinates can land on the tile to the
+/// left after Majsoul's hover/raise animation. Keep this scoped to hand tiles:
+/// action buttons and candidate rows use their calibrated positions unchanged.
+pub const HAND_TILE_CLICK_X_BIAS: f64 = 0.08;
+
 /// Action button positions (3x3 grid). The first two rows (indices 0..=5)
 /// are the only ones in use; rows 3 (indices 6..=8) are dead slots that
 /// Majsoul has reserved but never showed in production.
@@ -151,12 +158,17 @@ impl MajsoulOpType {
 /// tile.
 pub fn get_pai_coord(idx: usize, tehai_count: usize) -> (f64, f64) {
     debug_assert!(idx < TILES.len(), "tile index {idx} out of range");
-    if idx == 13 {
+    let (x, y) = if idx == 13 {
         let base = TILES[tehai_count.min(TILES.len() - 1)];
         (base.0 + TSUMO_SPACE, base.1)
     } else {
         TILES[idx]
-    }
+    };
+    hand_tile_click_coord((x, y))
+}
+
+pub fn hand_tile_click_coord((x, y): (f64, f64)) -> (f64, f64) {
+    (x + HAND_TILE_CLICK_X_BIAS, y)
 }
 
 /// Position of an action button, given the deduplicated set of Majsoul
@@ -215,16 +227,16 @@ mod tests {
     #[test]
     fn pai_coord_closed_hand() {
         // First tile slot, hand of any size.
-        assert_eq!(get_pai_coord(0, 13), TILES[0]);
+        assert_eq!(get_pai_coord(0, 13), hand_tile_click_coord(TILES[0]));
         // Last closed-hand position.
-        assert_eq!(get_pai_coord(12, 13), TILES[12]);
+        assert_eq!(get_pai_coord(12, 13), hand_tile_click_coord(TILES[12]));
     }
 
     #[test]
     fn pai_coord_tsumohai_offset() {
         // For a 13-tile closed hand, tsumohai sits past slot 13 by TSUMO_SPACE.
         let (x, y) = get_pai_coord(13, 13);
-        assert!((x - (TILES[13].0 + TSUMO_SPACE)).abs() < 1e-9);
+        assert!((x - (TILES[13].0 + TSUMO_SPACE + HAND_TILE_CLICK_X_BIAS)).abs() < 1e-9);
         assert!((y - TILES[13].1).abs() < 1e-9);
     }
 
@@ -233,7 +245,7 @@ mod tests {
         // After chi, hand is 10 tiles + tsumohai. The tsumohai position
         // is past slot 10 by TSUMO_SPACE.
         let (x, _) = get_pai_coord(13, 10);
-        assert!((x - (TILES[10].0 + TSUMO_SPACE)).abs() < 1e-9);
+        assert!((x - (TILES[10].0 + TSUMO_SPACE + HAND_TILE_CLICK_X_BIAS)).abs() < 1e-9);
     }
 
     #[test]

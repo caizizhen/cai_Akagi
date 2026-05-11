@@ -18,8 +18,8 @@ use crate::schema::MjaiEvent;
 #[cfg(test)]
 use coords::TSUMO_SPACE;
 use coords::{
-    action_button_pos, candidate_pos, get_pai_coord, kan_candidate_pos, MajsoulOpType,
-    ACTION_PRIORITY, TILES,
+    action_button_pos, candidate_pos, get_pai_coord, hand_tile_click_coord, kan_candidate_pos,
+    MajsoulOpType, ACTION_PRIORITY, TILES,
 };
 use rand::Rng;
 use riichienv_core::action::{Action, ActionType};
@@ -295,7 +295,7 @@ fn plan_dahai_click(pai: &str, tsumogiri: bool, ctx: &ActionContext) -> Option<S
             return None;
         }
         let idx = sorted_hand_index_for_discard(pai, &sorted)?;
-        let (x, y) = TILES.get(idx).copied()?;
+        let (x, y) = hand_tile_click_coord(TILES.get(idx).copied()?);
         return Some(Step::Click {
             x_norm: x,
             y_norm: y,
@@ -767,7 +767,7 @@ mod tests {
         match &result.steps[1] {
             Step::Click { x_norm, .. } => {
                 // Tsumohai (5p) 鈫?idx 13, with TSUMO_SPACE offset.
-                let expected = TILES[13].0 + TSUMO_SPACE;
+                let expected = hand_tile_click_coord((TILES[13].0 + TSUMO_SPACE, TILES[13].1)).0;
                 assert!(
                     (*x_norm - expected).abs() < 1e-9,
                     "expected tsumohai at {expected}, got {x_norm}"
@@ -806,7 +806,7 @@ mod tests {
         assert_eq!(result.steps.len(), 2);
         match &result.steps[1] {
             Step::Click { x_norm, .. } => {
-                let expected = TILES[13].0 + TSUMO_SPACE;
+                let expected = hand_tile_click_coord((TILES[13].0 + TSUMO_SPACE, TILES[13].1)).0;
                 assert!(
                     (*x_norm - expected).abs() < 1e-9,
                     "expected stale-snapshot tsumogiri at {expected}, got {x_norm}"
@@ -845,7 +845,7 @@ mod tests {
         assert_eq!(result.steps.len(), 2);
         match &result.steps[1] {
             Step::Click { x_norm, .. } => {
-                let expected = TILES[12].0;
+                let expected = hand_tile_click_coord(TILES[12]).0;
                 assert!(
                     (*x_norm - expected).abs() < 1e-9,
                     "expected closed-hand 5p at {expected}, got {x_norm}"
@@ -920,9 +920,9 @@ mod tests {
         match &result.steps[1] {
             Step::Click { x_norm, .. } => {
                 assert!(
-                    (*x_norm - TILES[5].0).abs() < 1e-9,
+                    (*x_norm - hand_tile_click_coord(TILES[5]).0).abs() < 1e-9,
                     "expected red 5m slot at {}, got {x_norm}",
-                    TILES[5].0
+                    hand_tile_click_coord(TILES[5]).0
                 );
             }
             _ => panic!("second step should be a click"),
@@ -990,9 +990,9 @@ mod tests {
         match &result.steps[1] {
             Step::Click { x_norm, .. } => {
                 assert!(
-                    (*x_norm - TILES[4].0).abs() < 1e-9,
+                    (*x_norm - hand_tile_click_coord(TILES[4]).0).abs() < 1e-9,
                     "expected closed normal 5m slot at {}, got {x_norm}",
-                    TILES[4].0
+                    hand_tile_click_coord(TILES[4]).0
                 );
             }
             _ => panic!("second step should be a click"),
@@ -1530,8 +1530,8 @@ mod tests {
         match &result.steps[1] {
             Step::Click { x_norm, .. } => {
                 assert!(
-                    (*x_norm - TILES[13].0).abs() < 1e-9,
-                    "expected raw TILES[13] (no TSUMO_SPACE), got {x_norm}"
+                    (*x_norm - hand_tile_click_coord(TILES[13]).0).abs() < 1e-9,
+                    "expected biased TILES[13] (no TSUMO_SPACE), got {x_norm}"
                 );
             }
             _ => panic!("expected click"),
@@ -1611,7 +1611,7 @@ mod tests {
         match &result.steps.last().unwrap() {
             Step::Click { x_norm, .. } => {
                 // Tsumohai click 鈫?TILES[13] + TSUMO_SPACE.
-                let expected = TILES[13].0 + TSUMO_SPACE;
+                let expected = hand_tile_click_coord((TILES[13].0 + TSUMO_SPACE, TILES[13].1)).0;
                 assert!((*x_norm - expected).abs() < 1e-9);
             }
             _ => panic!("expected click"),
