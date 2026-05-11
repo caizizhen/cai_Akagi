@@ -185,7 +185,7 @@ class Bot:
                     except Exception as exc:
                         sys.stderr.write(f"reach peek failed: {exc}\n")
                         sys.stderr.flush()
-            raw_data = self.policy_guard.suppress_reach_if_needed(
+            raw_data = self.policy_guard.guard_action(
                 raw_data,
                 self.event_log,
                 model.ot_settings.get("play_style", "balanced"),

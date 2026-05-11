@@ -114,6 +114,82 @@ class PolicyGuardTest(unittest.TestCase):
             "missing_reach_discard_tsumogiri_fallback",
         )
 
+    def test_conservative_late_game_prefers_genbutsu(self) -> None:
+        guard = make_guard(["1m", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5p"])
+        guard.consume({"type": "dahai", "actor": 1, "pai": "9m"})
+        guard.left_tiles = 20
+
+        action = guard.guard_action(
+            {
+                "type": "dahai",
+                "actor": 0,
+                "pai": "5p",
+                "meta": meta_for_allowed((8, 0.1), (13, 0.9)),
+            },
+            [],
+            "conservative",
+        )
+
+        self.assertEqual(action["type"], "dahai")
+        self.assertEqual(action["pai"], "9m")
+        self.assertEqual(action["meta"]["policy_guard"]["reason"], "late_game_conservative")
+
+    def test_balanced_early_game_keeps_model_discard(self) -> None:
+        guard = make_guard(["1m", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5p"])
+        guard.consume({"type": "dahai", "actor": 1, "pai": "9m"})
+
+        action = guard.guard_action(
+            {
+                "type": "dahai",
+                "actor": 0,
+                "pai": "5p",
+                "meta": meta_for_allowed((8, 0.1), (13, 0.9)),
+            },
+            [],
+            "balanced",
+        )
+
+        self.assertEqual(action["pai"], "5p")
+        self.assertNotIn("policy_guard", action.get("meta", {}))
+
+    def test_opponent_riichi_triggers_genbutsu_defense(self) -> None:
+        guard = make_guard(["1m", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5p"])
+        guard.consume({"type": "dahai", "actor": 1, "pai": "9m"})
+        guard.consume({"type": "reach", "actor": 1})
+
+        action = guard.guard_action(
+            {
+                "type": "dahai",
+                "actor": 0,
+                "pai": "5p",
+                "meta": meta_for_allowed((8, 0.1), (13, 0.9)),
+            },
+            [],
+            "balanced",
+        )
+
+        self.assertEqual(action["pai"], "9m")
+        self.assertEqual(action["meta"]["policy_guard"]["reason"], "hot_opponent_conservative")
+
+    def test_defensive_tie_prefers_normal_five_over_red_five(self) -> None:
+        guard = make_guard(["1m", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5p"])
+        guard.consume({"type": "dahai", "actor": 1, "pai": "5p"})
+        guard.consume({"type": "reach", "actor": 1})
+
+        action = guard.guard_action(
+            {
+                "type": "dahai",
+                "actor": 0,
+                "pai": "5pr",
+                "meta": meta_for_allowed((13, 0.1), (35, 0.9)),
+            },
+            [],
+            "balanced",
+        )
+
+        self.assertEqual(action["pai"], "5p")
+        self.assertEqual(action["meta"]["policy_guard"]["original_pai"], "5pr")
+
 
 if __name__ == "__main__":
     unittest.main()
