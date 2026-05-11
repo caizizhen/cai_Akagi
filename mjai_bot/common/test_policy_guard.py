@@ -118,6 +118,7 @@ class PolicyGuardTest(unittest.TestCase):
         guard = make_guard(["1m", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5p"])
         guard.consume({"type": "dahai", "actor": 1, "pai": "9m"})
         guard.consume({"type": "dahai", "actor": 2, "pai": "9m"})
+        guard.consume({"type": "dahai", "actor": 3, "pai": "9m"})
         guard.left_tiles = 20
 
         action = guard.guard_action(
@@ -157,6 +158,44 @@ class PolicyGuardTest(unittest.TestCase):
 
     def test_north_maps_to_honor_index(self) -> None:
         self.assertEqual(_to34("N"), 30)
+
+    def test_single_visible_north_is_not_hard_safe_against_tenpai(self) -> None:
+        guard = make_guard(["N", "N", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p"])
+        guard.consume({"type": "dahai", "actor": 2, "pai": "N"})
+        guard.consume({"type": "reach", "actor": 1})
+
+        action = guard.guard_action(
+            {
+                "type": "dahai",
+                "actor": 0,
+                "pai": "5p",
+                "meta": meta_for_allowed((13, 0.1), (30, 0.9)),
+            },
+            [],
+            "conservative",
+        )
+
+        self.assertEqual(action["pai"], "5p")
+        self.assertNotIn("policy_guard", action.get("meta", {}))
+
+    def test_late_game_does_not_treat_one_discarded_honor_as_safe(self) -> None:
+        guard = make_guard(["N", "N", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p"])
+        guard.consume({"type": "dahai", "actor": 1, "pai": "N"})
+        guard.left_tiles = 10
+
+        action = guard.guard_action(
+            {
+                "type": "dahai",
+                "actor": 0,
+                "pai": "5p",
+                "meta": meta_for_allowed((13, 0.1), (30, 0.9)),
+            },
+            [],
+            "conservative",
+        )
+
+        self.assertEqual(action["pai"], "5p")
+        self.assertNotIn("policy_guard", action.get("meta", {}))
 
     def test_conservative_before_twenty_tiles_keeps_model_discard(self) -> None:
         guard = make_guard(["1m", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5p"])

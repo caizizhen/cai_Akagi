@@ -355,10 +355,14 @@ class ConservativePolicyGuard:
             candidates.append((current_pai, float("-inf")))
         if not candidates:
             return action
+        hard_danger = set(active_riichi) or danger_seats
+        if not any(self._is_hard_safe_discard(tile, hard_danger) for tile, _ in candidates):
+            return action
 
-        best_pai, best_model_score = max(
+        best_pai, best_model_score = self._choose_defensive_discard(
             candidates,
-            key=lambda item: self._defensive_discard_score(item[0], item[1], danger_seats),
+            set(active_riichi),
+            danger_seats,
         )
         if not isinstance(current_pai, str) or best_pai == current_pai:
             return action
@@ -422,6 +426,35 @@ class ConservativePolicyGuard:
             model_score,
         )
 
+    def _choose_defensive_discard(
+        self,
+        candidates: list[tuple[str, float]],
+        active_riichi: set[int],
+        danger_seats: set[int],
+    ) -> tuple[str, float]:
+        hard_danger = active_riichi or danger_seats
+        hard_safe = [
+            item for item in candidates
+            if self._is_hard_safe_discard(item[0], hard_danger)
+        ]
+        return max(
+            hard_safe,
+            key=lambda item: self._defensive_discard_score(item[0], item[1], hard_danger),
+        )
+
+    def _is_hard_safe_discard(self, tile: str, danger_seats: set[int]) -> bool:
+        idx = _to34(tile)
+        if 0 <= idx < len(self.visible_counts) and self.visible_counts[idx] >= 4:
+            return True
+        if not danger_seats:
+            return False
+        norm = _normalize(tile)
+        return all(
+            seat < len(self.rivers)
+            and any(_normalize(discard) == norm for discard in self.rivers[seat])
+            for seat in danger_seats
+        )
+
     def _late_defence_override_allowed(
         self,
         current_pai: str,
@@ -431,6 +464,8 @@ class ConservativePolicyGuard:
     ) -> bool:
         current = self._defensive_discard_score(current_pai, float("-inf"), danger_seats)
         best = self._defensive_discard_score(best_pai, best_model_score, danger_seats)
+        if not self._is_hard_safe_discard(best_pai, danger_seats):
+            return False
         current_genbutsu = current[0]
         best_genbutsu = best[0]
         best_exhausted = best[1] == 1
