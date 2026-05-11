@@ -333,6 +333,18 @@ fn plan_dahai_click(pai: &str, tsumogiri: bool, ctx: &ActionContext) -> Option<S
             }
         }
     }
+    if tsumogiri && tsumohai.is_none() {
+        let tehai_count = if matches!(tehai.len(), 2 | 5 | 8 | 11 | 14) {
+            tehai.len().saturating_sub(1)
+        } else {
+            tehai.len()
+        };
+        let (x, y) = get_pai_coord(13, tehai_count);
+        return Some(Step::Click {
+            x_norm: x,
+            y_norm: y,
+        });
+    }
 
     let idx = sorted_hand_index_for_discard(pai, &tehai)?;
     if normal_five_has_red_twin(pai, &tehai) {
@@ -810,6 +822,50 @@ mod tests {
                 assert!(
                     (*x_norm - expected).abs() < 1e-9,
                     "expected stale-snapshot tsumogiri at {expected}, got {x_norm}"
+                );
+            }
+            _ => panic!("second step should be a click"),
+        }
+    }
+
+    #[test]
+    fn dahai_tsumogiri_clicks_drawn_slot_without_cached_tsumohai() {
+        let snap = snapshot_with_oya(
+            0,
+            1,
+            vec![
+                "1p", "2m", "9m", "3m", "4m", "5m", "6m", "7m", "8m", "1s", "2s", "3s", "4s", "5s",
+            ],
+        );
+        let act = MjaiEvent::Dahai {
+            actor: 0,
+            pai: "9m".into(),
+            tsumogiri: true,
+        };
+        let cfg_ref = cfg();
+        let ctx = ctx_for(
+            &act,
+            &snap,
+            &[],
+            Some("1m"),
+            None,
+            false,
+            ReachState::Idle,
+            &cfg_ref,
+        );
+        let result = MajsoulAutoplay::new().plan(&ctx);
+        assert_eq!(result.steps.len(), 2);
+        match &result.steps[1] {
+            Step::Click { x_norm, .. } => {
+                let expected = hand_tile_click_coord((TILES[13].0 + TSUMO_SPACE, TILES[13].1)).0;
+                let sorted_fallback = hand_tile_click_coord(TILES[2]).0;
+                assert!(
+                    (*x_norm - expected).abs() < 1e-9,
+                    "expected uncached tsumogiri at {expected}, got {x_norm}"
+                );
+                assert!(
+                    (*x_norm - sorted_fallback).abs() > 1e-9,
+                    "tsumogiri must not use sorted-hand fallback"
                 );
             }
             _ => panic!("second step should be a click"),
