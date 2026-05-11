@@ -1275,7 +1275,14 @@ fn snapshot_is_live_for_action(action: &MjaiEvent, snap: &GameStateSnapshot, our
             if *actor != our_seat {
                 return false;
             }
-            *target < snap.num_players && snap.phase == Phase::WaitResponse
+            if *target >= snap.num_players {
+                return false;
+            }
+            if *target == *actor {
+                snap.phase == Phase::WaitAct && snap.current_player == our_seat
+            } else {
+                snap.phase == Phase::WaitResponse
+            }
         }
         MjaiEvent::Ryukyoku { .. } | MjaiEvent::None => true,
         _ => false,
@@ -1315,6 +1322,7 @@ pub async fn run_autoplay_manager(
 mod tests {
     use super::*;
     use crate::event_bus::mjai_bus;
+    use crate::game_state::snapshot::PlayerSnapshot;
 
     fn manager_for_seq_tests() -> AutoplayManager {
         AutoplayManager::new(
@@ -1334,6 +1342,38 @@ mod tests {
             },
             meta: None,
             trigger_seq,
+        }
+    }
+
+    fn live_snapshot(phase: Phase, current_player: u8, our_seat: u8) -> GameStateSnapshot {
+        let players = (0..4)
+            .map(|seat| PlayerSnapshot {
+                seat,
+                tehai: vec!["1m".into()],
+                melds: Vec::new(),
+                river: Vec::new(),
+                score: 25000,
+                riichi_declared: false,
+                riichi_stage: false,
+                double_riichi: false,
+                riichi_declaration_index: None,
+                kita_tiles: Vec::new(),
+            })
+            .collect();
+        GameStateSnapshot {
+            bakaze: "E".into(),
+            kyoku: 1,
+            honba: 0,
+            kyotaku: 0,
+            oya: 0,
+            current_player,
+            turn_count: 0,
+            phase,
+            is_done: false,
+            num_players: 4,
+            players,
+            dora_markers: Vec::new(),
+            our_seat: Some(our_seat),
         }
     }
 
@@ -1389,5 +1429,31 @@ mod tests {
         assert_eq!(mgr.state.mjai_seq, 2);
         mgr.handle_mjai_event(&MjaiEvent::EndKyoku);
         assert_eq!(mgr.state.mjai_seq, 3);
+    }
+
+    #[test]
+    fn live_gate_allows_tsumo_hora_on_own_wait_act() {
+        let snap = live_snapshot(Phase::WaitAct, 0, 0);
+        let action = MjaiEvent::Hora {
+            actor: 0,
+            target: 0,
+            deltas: None,
+            ura_markers: None,
+        };
+        assert!(snapshot_is_live_for_action(&action, &snap, 0));
+    }
+
+    #[test]
+    fn live_gate_allows_ron_hora_only_on_wait_response() {
+        let wait_response = live_snapshot(Phase::WaitResponse, 1, 0);
+        let wait_act = live_snapshot(Phase::WaitAct, 0, 0);
+        let action = MjaiEvent::Hora {
+            actor: 0,
+            target: 1,
+            deltas: None,
+            ura_markers: None,
+        };
+        assert!(snapshot_is_live_for_action(&action, &wait_response, 0));
+        assert!(!snapshot_is_live_for_action(&action, &wait_act, 0));
     }
 }

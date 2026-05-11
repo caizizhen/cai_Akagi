@@ -1,4 +1,4 @@
-﻿//! Majsoul implementation of [`PlatformAutoplay`].
+//! Majsoul implementation of [`PlatformAutoplay`].
 //!
 //! Coordinate tables in `coords.rs` are the only Majsoul-specific data;
 //! the dispatch logic here translates a bot decision into a [`Step`]
@@ -1142,6 +1142,85 @@ mod tests {
                 assert_eq!(*y_norm, 7.0);
             }
             _ => panic!("expected click"),
+        }
+    }
+
+    #[test]
+    fn hora_tsumo_clicks_zimo_button() {
+        let mut snap = snapshot_with_hand(0, vec!["1m"]);
+        snap.phase = Phase::WaitAct;
+        snap.current_player = 0;
+        let act = MjaiEvent::Hora {
+            actor: 0,
+            target: 0,
+            deltas: None,
+            ura_markers: None,
+        };
+        let cfg_ref = cfg();
+        let legal = vec![Action::new(ActionType::Tsumo, None, vec![], Some(0))];
+        let ctx = ctx_for(
+            &act,
+            &snap,
+            &legal,
+            Some("1m"),
+            Some("1m"),
+            false,
+            ReachState::Idle,
+            &cfg_ref,
+        );
+        let result = MajsoulAutoplay::new().plan(&ctx);
+        assert_eq!(result.steps.len(), 2);
+        match &result.steps[1] {
+            Step::Click { x_norm, y_norm } => {
+                let expected = action_button_pos(
+                    &[MajsoulOpType::None, MajsoulOpType::Zimo],
+                    MajsoulOpType::Zimo,
+                )
+                .unwrap();
+                assert_eq!((*x_norm, *y_norm), expected);
+            }
+            _ => panic!("expected zimo click"),
+        }
+    }
+
+    #[test]
+    fn hora_ron_clicks_ron_button() {
+        let mut snap = snapshot_with_hand(0, vec!["1m"]);
+        snap.phase = Phase::WaitResponse;
+        snap.current_player = 1;
+        let act = MjaiEvent::Hora {
+            actor: 0,
+            target: 1,
+            deltas: None,
+            ura_markers: None,
+        };
+        let cfg_ref = cfg();
+        let legal = vec![
+            Action::new(ActionType::Pass, None, vec![], Some(0)),
+            Action::new(ActionType::Ron, None, vec![], Some(0)),
+        ];
+        let ctx = ctx_for(
+            &act,
+            &snap,
+            &legal,
+            Some("1m"),
+            None,
+            false,
+            ReachState::Idle,
+            &cfg_ref,
+        );
+        let result = MajsoulAutoplay::new().plan(&ctx);
+        assert_eq!(result.steps.len(), 2);
+        match &result.steps[1] {
+            Step::Click { x_norm, y_norm } => {
+                let expected = action_button_pos(
+                    &[MajsoulOpType::None, MajsoulOpType::Ron],
+                    MajsoulOpType::Ron,
+                )
+                .unwrap();
+                assert_eq!((*x_norm, *y_norm), expected);
+            }
+            _ => panic!("expected ron click"),
         }
     }
 
