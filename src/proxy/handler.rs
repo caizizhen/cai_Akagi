@@ -3,10 +3,9 @@ use crate::{
     config::Platform,
     event_bus::MjaiBus,
     inspector::InspectorWriter,
-    logger::{BinaryLogger, Session},
+    logger::Session,
     schema::{FrameDirection, FrameRaw, InspectorEntry},
 };
-use base64::Engine as _;
 use chrono::Local;
 use hudsucker::{
     futures::{Sink, SinkExt, Stream, StreamExt},
@@ -25,9 +24,6 @@ use std::{
 use tokio::sync::Notify;
 use tracing::{debug, error, info, warn};
 
-const TAG_CLIENT_TO_SERVER: u8 = 0;
-const TAG_SERVER_TO_CLIENT: u8 = 1;
-
 /// Shared, per-WS-upgrade bridge. Both directions of the same WebSocket
 /// connection (client→server and server→client) need the same `Bridge`
 /// instance because Majsoul's request/response correlation lives in the
@@ -42,7 +38,6 @@ type FlowInspectorIds = Arc<StdMutex<HashMap<SocketAddr, String>>>;
 #[derive(Clone)]
 pub struct ProxyHandler {
     session: Arc<Session>,
-    binary: Arc<BinaryLogger>,
     platform: Platform,
     bridges: Arc<StdMutex<HashMap<SocketAddr, SharedBridge>>>,
     next_flow_id: Arc<AtomicU64>,
@@ -70,11 +65,9 @@ impl ProxyHandler {
         mjai_tx: Option<MjaiBus>,
         force_close: Arc<Notify>,
     ) -> anyhow::Result<Self> {
-        let binary = session.binary_logger("proxy")?;
         let inspector = session.inspector();
         Ok(Self {
             session,
-            binary,
             platform,
             bridges: Arc::new(StdMutex::new(HashMap::new())),
             next_flow_id: Arc::new(AtomicU64::new(1)),
@@ -234,36 +227,18 @@ impl ProxyHandler {
         bridge: &SharedBridge,
     ) -> Option<Message> {
         let client = client_addr(ctx);
-        let (tag, dir, dir_arrow, uri) = match ctx {
-            WebSocketContext::ServerToClient { src, .. } => (
-                TAG_SERVER_TO_CLIENT,
-                Direction::Down,
-                '\u{2193}',
-                src.to_string(),
-            ),
-            WebSocketContext::ClientToServer { dst, .. } => (
-                TAG_CLIENT_TO_SERVER,
-                Direction::Up,
-                '\u{2191}',
-                dst.to_string(),
-            ),
+        let (dir, dir_arrow, uri) = match ctx {
+            WebSocketContext::ServerToClient { src, .. } => {
+                (Direction::Down, '\u{2193}', src.to_string())
+            }
+            WebSocketContext::ClientToServer { dst, .. } => {
+                (Direction::Up, '\u{2191}', dst.to_string())
+            }
         };
 
         match &msg {
             Message::Binary(buf) => {
                 debug!("{dir_arrow} {uri} binary len={}", buf.len());
-                self.binary.write(tag, buf);
-                let result = {
-                    let mut b = bridge.lock().expect("bridge mutex poisoned");
-                    b.parse(dir, buf)
-                };
-                self.record_frame(client, dir, FrameRaw::Binary(b64(buf)), buf.len(), &result);
-                self.dispatch_events(dir_arrow, &uri, result.events);
-            }
-            Message::Text(t) => {
-                debug!("{dir_arrow} {uri} text len={}", t.len());
-                let buf = t.as_bytes();
-                self.binary.write(tag, buf);
                 let result = {
                     let mut b = bridge.lock().expect("bridge mutex poisoned");
                     b.parse(dir, buf)
@@ -271,7 +246,23 @@ impl ProxyHandler {
                 self.record_frame(
                     client,
                     dir,
-                    FrameRaw::Text(t.to_string()),
+                    FrameRaw::Binary(String::new()),
+                    buf.len(),
+                    &result,
+                );
+                self.dispatch_events(dir_arrow, &uri, result.events);
+            }
+            Message::Text(t) => {
+                debug!("{dir_arrow} {uri} text len={}", t.len());
+                let buf = t.as_bytes();
+                let result = {
+                    let mut b = bridge.lock().expect("bridge mutex poisoned");
+                    b.parse(dir, buf)
+                };
+                self.record_frame(
+                    client,
+                    dir,
+                    FrameRaw::Text(String::new()),
                     buf.len(),
                     &result,
                 );
@@ -323,10 +314,6 @@ impl ProxyHandler {
             emitted: result.events.len(),
         });
     }
-}
-
-fn b64(buf: &[u8]) -> String {
-    base64::engine::general_purpose::STANDARD.encode(buf)
 }
 
 fn client_addr(ctx: &WebSocketContext) -> SocketAddr {

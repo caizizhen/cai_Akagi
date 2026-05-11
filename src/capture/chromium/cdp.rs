@@ -413,13 +413,13 @@ fn record_frame(
     flow_id: String,
     opcode: i64,
     payload: &[u8],
-    payload_data: &str,
+    _payload_data: &str,
     result: &crate::bridge::ParseResult,
 ) {
     let raw = if opcode == 1 {
-        FrameRaw::Text(payload_data.to_string())
+        FrameRaw::Text(String::new())
     } else {
-        FrameRaw::Binary(payload_data.to_string())
+        FrameRaw::Binary(String::new())
     };
     inspector.record(InspectorEntry::WsFrame {
         ts_ms: Local::now().timestamp_millis(),
